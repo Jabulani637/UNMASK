@@ -18,3 +18,9 @@ api/backups/
 
 dist/
 web/dist/
+
+# Local run output. A suite log quotes folder paths and the addresses of the accounts
+# it created; it is read on the machine that wrote it and nowhere else. A glob, because
+# these files are written under whatever name the person running them typed.
+*.log
+api/*.log

@@ -718,9 +718,11 @@ test('stage 5 — anonymous chat over REST and WebSocket', async t => {
       await new Promise(resolve => setTimeout(resolve, heartbeatMs * 6));
       assert.equal(ws.readyState, WebSocket.OPEN, 'a live tab was not treated as a dead one');
 
-      // Still a working connection, not merely an un-closed socket.
+      // Still a working connection, not merely an un-closed socket. The wider
+      // window is a scheduling allowance, not a latency expectation: a socket that
+      // is open but deaf never delivers at all, so this cannot turn that green.
       await sendViaRest(world.b, world.id, 'still here after the pings');
-      const arrived = await untilSeen(frames, f => f.type === 'message');
+      const arrived = await untilSeen(frames, f => f.type === 'message', 10000);
       assert.ok(arrived, 'a message still arrives on it');
       assert.equal(arrived.message.body, 'still here after the pings');
 

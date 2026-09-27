@@ -22,13 +22,15 @@ const path = require('path');
 
 const { config, configProblems } = require('../src/config');
 const db = require('../src/db');
+const photos = require('../src/services/photos');
 const lib = require('./backupLib');
 
 function usage(detail) {
   if (detail) console.error(`\n${detail}`);
   console.error('\nUsage:');
-  console.error('  node scripts/restore.js <backup-folder> --into <database-name> [--photos-into <folder>]');
+  console.error('  node scripts/restore.js <backup-folder> --into <database-name> [--push-photos | --photos-into <folder>]');
   console.error('\n  --into is required, and cannot be the database the backup came from.');
+  console.error('  --push-photos writes the backup\'s photos into the currently configured PHOTO_STORE, refusing to overwrite any name already there.');
   process.exit(1);
 }
 
@@ -42,6 +44,7 @@ async function main() {
   const folder = path.resolve(argv.find(a => !a.startsWith('--')) || '');
   const into = arg('--into', argv);
   const photosInto = arg('--photos-into', argv);
+  const pushPhotos = argv.includes('--push-photos');
 
   if (!folder || !fs.existsSync(folder)) usage(`No such backup folder: ${argv.find(a => !a.startsWith('--')) || '(none given)'}`);
   if (!into) usage('Nothing was named to restore into.');
@@ -51,12 +54,23 @@ async function main() {
 
   const manifest = lib.readManifest(folder);
 
-  if (into === manifest.sourceDb) {
+  // The guard is about the *server*, not the word in `--into`. Two databases may
+  // honestly be called `unmask` on two machines, and "carry this laptop's data to
+  // Atlas" is then one command. A manifest with no readable host is treated as the
+  // worst case: an old or hand-edited folder refuses on the name alone rather than
+  // losing the only check that stops a production database being overwritten.
+  const sourceHost = lib.databaseHost(manifest.uri || '');
+  const targetHost = lib.databaseHost();
+  const sameServer = sourceHost === '' || sourceHost === targetHost;
+
+  if (into === manifest.sourceDb && sameServer) {
     usage(
-      `"${into}" is the database this backup was taken from. Overwriting it is what a real disaster recovery does, ` +
+      `"${into}" is the database this backup was taken from, on the server it was taken ` +
+        `from (${targetHost}). Overwriting it is what a real disaster recovery does, ` +
         'and it is not what this script is for.\n' +
         `  Rehearse it:  --into ${into}_rehearsal, read the counts, then change MONGO_URL to that name and restart.\n` +
-        '  For real:     stop the API first, and say so in the change log.'
+        '  For real:     stop the API first, and say so in the change log.\n' +
+        '  To move the data somewhere new: point MONGO_URL at the other server and run this again.'
     );
   }
 
@@ -128,8 +142,16 @@ async function main() {
   const photoFiles = lib.walk(photosFolder);
   if (!photoFiles.length) {
     console.log('\n  photos      this backup holds none (--no-photos was used, or the folder was empty).');
+  } else if (photosInto && pushPhotos) {
+    usage('Both --photos-into and --push-photos were given. Say where the photos go once: a folder, or the live store.');
+  } else if (pushPhotos) {
+    // Straight into whatever PHOTO_STORE points at. For a bucket that is the live
+    // one — there is no second bucket to rehearse against without editing the
+    // configuration — which is why this needs to be asked for by name.
+    const pushed = await photos.restorePhotos(photosFolder);
+    console.log(`\n  photos      ${pushed.files} file(s), ${pushed.bytes.toLocaleString('en-US')} bytes pushed into the ${photos.backend()} store.`);
   } else if (!photosInto) {
-    console.log(`\n  photos      ${photoFiles.length} file(s) are in ${photosFolder} and were NOT copied. Add --photos-into <folder> to restore them.`);
+    console.log(`\n  photos      ${photoFiles.length} file(s) are in ${photosFolder} and were NOT restored. Add --push-photos to put them back into the ${photos.backend()} store, or --photos-into <folder> to lay them out somewhere new.`);
   } else {
     let bytes = 0;
     for (const file of photoFiles) {

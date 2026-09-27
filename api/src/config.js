@@ -23,6 +23,56 @@ function csv(name, fallback) {
     .filter(Boolean);
 }
 
+/** Something is an address only if a host can be read out of it. */
+function isUrl(value) {
+  try {
+    return Boolean(new URL(value).hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The R2 bucket the photos go to, from the environment.
+ *
+ * R2 prints its endpoint with the bucket's name already on the end of it in some
+ * places (`…r2.cloudflarestorage.com/my-bucket`), and that whole string is what
+ * gets copied. Signed requests put the bucket first and the key after it, so a
+ * pasted path would send a photo to a key that begins with the bucket's own name —
+ * here the bucket is split off instead, which is the difference between a working
+ * deployment and one that 404s on every picture.
+ */
+function r2Config() {
+  const env = process.env;
+  let endpoint = String(env.R2_ENDPOINT || '').trim().replace(/\/+$/, '');
+  let bucket = String(env.R2_BUCKET || '').trim();
+
+  if (endpoint) {
+    try {
+      const url = new URL(endpoint);
+      const [first] = url.pathname.split('/').filter(Boolean);
+      if (first) {
+        if (!bucket) bucket = first;
+        url.pathname = '/';
+        endpoint = url.toString().replace(/\/+$/, '');
+      }
+    } catch {
+      // Left as written: a gate below reports an address that is not a URL rather
+      // than guessing at what was meant by it.
+    }
+  } else if (String(env.R2_ACCOUNT_ID || '').trim()) {
+    endpoint = `https://${String(env.R2_ACCOUNT_ID).trim()}.r2.cloudflarestorage.com`;
+  }
+
+  return {
+    endpoint,
+    bucket,
+    accessKeyId: String(env.R2_ACCESS_KEY_ID || '').trim(),
+    secretAccessKey: String(env.R2_SECRET_ACCESS_KEY || '').trim(),
+    requestTimeoutMs: Number(env.R2_TIMEOUT_MS || 8000),
+  };
+}
+
 const config = {
   envFileFound,
   nodeEnv: process.env.NODE_ENV || 'development',
@@ -73,10 +123,33 @@ const config = {
 
   appUrl: (process.env.PUBLIC_APP_URL || 'http://localhost:5273').replace(/\/$/, ''),
 
+  // Where a profile photo's bytes actually live. `disk` is the default because it
+  // is what a laptop and the shipped Docker image do; `r2` puts them in a private
+  // Cloudflare R2 bucket, which is what a server that can be rebuilt from git needs
+  // — an image rebuild wipes everything inside the container, photos included.
+  //
+  // And never while testing, for the same reason `devAutoVerify` is not read from
+  // the environment there: a suite that honoured PHOTO_STORE=r2 would upload two
+  // thousand made-up students' pictures into a real bucket, in somebody's account,
+  // on a machine that only meant to run a test.
+  // `test/photoStoreR2.test.js` is the one file that asks for it back.
+  photoStore:
+    (process.env.NODE_ENV || 'development') === 'test'
+      ? 'disk'
+      : String(process.env.PHOTO_STORE || 'disk').trim().toLowerCase(),
+
   // Deliberately outside anything the web server publishes: a photo is only
   // ever readable through the API, which checks the reveal before opening it.
+  // Read by the disk driver only.
   photoDir: path.resolve(API_ROOT, process.env.PHOTO_DIR || './storage/photos'),
   maxPhotoBytes: 5 * 1024 * 1024,
+
+  // A private bucket is writable and readable only by a key that can sign an S3
+  // request — R2 issues that pair on its own page, and it is not the `cfat_` token
+  // that manages the account. The secret half is the whole bucket in one string, so
+  // it stays in this process and in `.env`, never in the built site and never in a
+  // response.
+  r2: r2Config(),
 
   // Where the local email fallback writes while SMTP_HOST is empty. The test suite
   // points this at a scratch folder so it cannot mix its files into the one a
@@ -142,11 +215,18 @@ function productionProblems() {
   }
 
   // The whole point of storing a photo behind the API is that there is no URL for
-  // it. Inside the served build, there is.
+  // it. Inside the served build, there is. Only the disk driver has a folder.
   const servedRoot = path.resolve(config.webDist);
   const photoRoot = path.resolve(config.photoDir);
-  if (photoRoot === servedRoot || photoRoot.startsWith(servedRoot + path.sep)) {
-    problems.push(`PHOTO_DIR (${config.photoDir}) is inside WEB_DIST (${config.webDist}) — the site would serve every profile photo straight from disk, with no session, no reveal and no check of anybody's permission. Move the photos out of the build folder.`);
+  if (config.photoStore === 'disk' && (photoRoot === servedRoot || photoRoot.startsWith(servedRoot + path.sep))) {
+    problems.push(`PHOTO_DIR (${config.photoDir}) is inside WEB_DIST (${config.webDist}) — the site would serve every profile photo straight from disk, with no session, no reveal and no check of anybody's permission. Move the photos out of the build folder, or set PHOTO_STORE=r2.`);
+  }
+
+  // Only an http:// address, and not every unusable one: a value that is not an
+  // address at all is the other gate's business. This sentence is about a signature
+  // travelling in the clear, and that is only true of one that starts http://.
+  if (config.photoStore === 'r2' && config.r2.endpoint.startsWith('http://')) {
+    problems.push(`R2_ENDPOINT is "${config.r2.endpoint}" — every photo read and write signs its request with R2_SECRET_ACCESS_KEY, and over plain http that signature goes out unencrypted, on a line anyone between here and Cloudflare can read. Use the https:// endpoint R2 gives you (https://<account-id>.r2.cloudflarestorage.com).`);
   }
 
   if (config.devAutoVerify) {
@@ -171,11 +251,22 @@ function productionProblems() {
 function configProblems() {
   const problems = [];
 
-  // A container is configured by its environment and has no .env file at all, so the
-  // sentence is only true when the two keys with no safe default are missing too.
-  const configuredFromEnvironment = process.env.MONGO_URL && process.env.SESSION_SECRET;
-  if (!config.envFileFound && !configuredFromEnvironment) {
-    problems.push(`No .env at ${envFile} — copy .env.example to .env in the project root.`);
+  // A container, and every "push to git and it deploys" host, is configured by its
+  // environment and has no .env file to edit — Render's own dashboard calls them
+  // Environment Variables. So a missing file is only news when the two keys with no
+  // safe default are missing from the environment as well, and the sentence has to
+  // name both places a value can come from instead of sending someone to Render's
+  // dashboard for a file that will never exist there.
+  if (!config.envFileFound && (!config.mongoUrl || !config.session.secret)) {
+    const missing = [];
+    if (!config.mongoUrl) missing.push('MONGO_URL');
+    if (!config.session.secret) missing.push('SESSION_SECRET');
+    const where = missing.length === 1 ? missing[0] : `${missing[0]} or ${missing[1]}`;
+    problems.push(
+      `No .env at ${envFile}, and the environment has no ${where} either, so this process cannot start. ` +
+        `On a laptop: copy .env.example to .env in the project root and fill it in. ` +
+        `On a host that deploys from git (Render, Railway, Fly) or runs the shipped Docker image there is no file to edit — add ${missing.join(' and ')} as environment variables in that host's dashboard instead.`
+    );
   }
   if (!config.mongoUrl) {
     problems.push('MONGO_URL is empty — the API cannot read or save anything. See "The database" in .env.example.');
@@ -195,6 +286,27 @@ function configProblems() {
   }
   if (config.smtp.host && (!config.smtp.user || !config.smtp.password)) {
     problems.push('SMTP_HOST is set but SMTP_USER/SMTP_PASSWORD are not — verification emails would fail silently.');
+  }
+
+  // Two, because these are all that exist. A typo here (`s3`, `r2bucket`) would
+  // otherwise boot happily and write students' photos somewhere no one is looking.
+  if (!['disk', 'r2'].includes(config.photoStore)) {
+    problems.push(`PHOTO_STORE is "${process.env.PHOTO_STORE}" — the choices are "disk" (a folder this process can see, set by PHOTO_DIR) or "r2" (a private Cloudflare R2 bucket, set by R2_ENDPOINT or R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY).`);
+  }
+
+  // Asked whenever the store is R2, not only in production: a missing key is a
+  // broken upload at any hour, and a developer should hear about it at boot rather
+  // than as a 500 the first time a student picks a picture.
+  if (config.photoStore === 'r2') {
+    const missing = [];
+    if (!config.r2.endpoint) missing.push('R2_ENDPOINT (https://<account-id>.r2.cloudflarestorage.com), or R2_ACCOUNT_ID to build it');
+    else if (!isUrl(config.r2.endpoint)) missing.push(`R2_ENDPOINT ("${config.r2.endpoint}" is not an address)`);
+    if (!config.r2.bucket) missing.push('R2_BUCKET (the exact name of a *private* bucket)');
+    if (!config.r2.accessKeyId) missing.push('R2_ACCESS_KEY_ID');
+    if (!config.r2.secretAccessKey) missing.push('R2_SECRET_ACCESS_KEY');
+    if (missing.length) {
+      problems.push(`PHOTO_STORE=r2 but ${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} missing — every photo upload and every photo read would fail. Set ${missing.length === 1 ? 'it' : 'them'} in .env, or set PHOTO_STORE=disk to keep the photos in PHOTO_DIR.`);
+    }
   }
 
   if (config.nodeEnv === 'production') problems.push(...productionProblems());

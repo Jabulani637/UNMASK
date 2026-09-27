@@ -99,7 +99,7 @@ this laptop.**
 | **Every response says what it is**: a strict content security policy, `nosniff`, no framing, same-origin resource policy, no referrer, no camera/microphone/location permissions, and `Cache-Control: no-store` — on the 200, and on the 401, the 404 and the 413 that never reach a route at all. A student's profile, their messages and the mere fact that an address is in this database are not things a library computer keeps a copy of (NFR-2.1 to NFR-2.3) | `Strict-Transport-Security` is deliberately absent until the deployment is actually HTTPS: promising it over a plain development port would make a browser refuse its own localhost for a month afterwards. It appears the moment `NODE_ENV=production` |
 | **A client cannot choose which rate-limit bucket it spends.** `X-Forwarded-For` is believed only when `TRUST_PROXY_HOPS` says a proxy is writing it — otherwise a guesser simply names a new address per attempt, which is exactly what the probe that opened this hole did twelve times in a row | Behind a real host, leaving `TRUST_PROXY_HOPS` at 0 makes every student arrive as one address, so one busy person could lock the site out of logging in. The setting has two right answers depending on the network, and `.env.example` says which is which |
 | **A Mongo operator in a request body reaches no query.** Login, register, forgot, reset, pass, connect, mark-read, settings and profile-save are each fired with `{"$ne": null}` in their one field, and the database is read afterwards: no session issued, no account made, no conversation opened, no password changed, no unread notice silently marked read, no profile field rewritten | This is a standing test, not a filter. Nothing strips `$` from a body — every door already coerces what it is given, and the test is here so the day a new route forgets to is a red run rather than a hole |
-| **Suspicious behaviour leaves one line in the server log** when a limiter is first crossed, naming the bucket and a salted fingerprint of the address — never the address itself, because an address is personal data and a log file is the one place in this project with no deletion path (NFR-2.5) | It is one line per window, not a ledger: a client hammering an endpoint cannot use the log as a write amplifier. There is no dashboard, no alerting, and no retention policy on the log itself: `deploy\docker-compose.prod.yml` sets no `logging:` block, so the size cap and the rotation belong to the host, which is the one place this project writes nothing. |
+| **Suspicious behaviour leaves one line in the server log** when a limiter is first crossed, naming the bucket and a salted fingerprint of the address — never the address itself, because an address is personal data and a log file is the one place in this project with no deletion path (NFR-2.5) | It is one line per window, not a ledger: a client hammering an endpoint cannot use the log as a write amplifier. There is no dashboard and no alerting, and the retention is a ceiling rather than a history: `deploy\docker-compose.prod.yml` sets `logging:` to `json-file`, `max-size: 20m`, `max-file: 5`, so the line survives on a server for as long as the process writes 100 MB of anything and is then dropped, unrecoverably, by Docker. |
 | **Download everything we hold about you**, on `/account` and at `POST /api/auth/export`: one JSON file holding the sign-in record, the profile — with the whole appearance block in it, race line included, because that is the one copy of it a student is ever handed — every conversation with every message in it, the suggestions declined, the blocks made, reports in both directions, notices and log entries. It asks for your password, because the secret behind that door is the same size as the one behind deletion, and it writes nothing — no row, no "you exported" event (NFR-3.1) | There is no emailed copy and no hosted archive: the file exists only in the moment you asked for it, in your own downloads. A student who cannot reach a browser — or a paper request someone else has to answer — still has to sit at their own signed-in session; no route lets a second person collect it for them |
 | **The access file and the deletion promise read from one definition of "yours".** `eraseDataFor` keeps no filter map of its own: both rights call `ownData`, and the test asserts the per-collection counts the file reports *equal* the per-collection counts the deletion reports afterwards, down to the one photo file removed from disk (NFR-3.1, NFR-3.5) | A collection added to the database later has to be added to `User.dataCollections` and given a filter, or deletion falls back to matching on `userId`/`userA`/`userB` and that equality assertion goes red. That is deliberate: the guard is a tally, not a list of names someone has to remember to extend |
 | **Nobody else appears in your file.** Each peer is the words `(another student)`, each staff actor `(a staff member)`, an automated thread-close `(the system)`, and whoever reported you is not named even to you. Blocks made *against* your account are listed nowhere while still being deleted, because a block's entire design is to read as an ended chat (FR-6.2, NFR-3.3). Seven lines at the end of the file name every omission and the reason for it | The redaction is not a courtesy: an id is anonymous only until somebody pastes the file into a support email, and an id is the one thing in here this database can join straight back to a person. Message bodies of the other student *are* included, because a thread you were in is your copy too |
@@ -111,11 +111,11 @@ this laptop.**
 | The landing page, transcribed from the approved design, at `http://localhost:5273` | |
 | **`npm run a11y` is a standing check, not a one-off report.** It reads `unmask.css`, resolves every `var()` through the token blocks, and fails the run when any declared pair falls under AA in *either* scheme — including the pairs no single rule writes down, where one rule sets a colour and an earlier, narrower rule sets the background under it. Proven non-vacuous by re-breaking it twice: setting a band's ring back to `var(--blue)` failed the run at 1.00:1, and setting the page's ring back failed it at 2.81:1 in the dark scheme | It judges what is *declared*. 47 rules set a colour with no background of their own and are only answerable in a browser, so they are left to the live sweep rather than guessed at from the file |
 | **One process, one idea of who is signed in**: `npm run build`, then `SERVE_WEB=1` and the API answers `/`, every client route, the hashed assets and the four self-hosted font files — no request leaves a browser for a font, a CDN or an analytics script. The page policy and the API policy are **different strings on purpose** (`default-src 'self' … connect-src 'self' ws: wss:` for the site, `default-src 'none'` plus `no-store` for `/api` and `/ws`) and a test asserts they are not equal, so neither half can quietly take over the other; a hashed file may be cached for a year while the un-hashed fonts get a week; a path that matches no file 404s instead of being handed `index.html` with a 200; and a page route answers GET and HEAD and refuses to be a POST (stage 9d) | A client route the server has never heard of still gets the app, because that is what a single-page site has to do — so a mistyped *page* address is a blank screen that reads 200. Only the API's unknown paths answer with the "no such page" that carries the safe headers |
-| **Fifteen configuration refusals, nine of them production-only**: an http `PUBLIC_APP_URL` (the session cookie is `Secure`, so every login would look like a wrong password), an http entry anywhere in `WEB_ORIGIN`, the site served at an origin the socket handshake will not accept — the failure where chat is silently dead and nothing else looks broken — no SMTP, the template database password still in place, `PHOTO_DIR` inside the served build, `DEV_AUTO_VERIFY` on (see "Where the emails go while you are developing"), `TRUST_PROXY_HOPS` unset or not a whole number, `SERVE_WEB` on with nothing built, a `SESSION_SECRET` empty or under 32 characters, an empty `MONGO_URL`, an SMTP host with no credentials, and no `.env` at all with nothing supplied by the environment. Proven in both directions: a correct production config boots and says nothing, and the *same* keys under `NODE_ENV=development` do not borrow the production gates (stage 9d) | A gate can only refuse to start. Nothing watches a running server: `restart: unless-stopped` is the whole of the supervision, and there is no alerting of any kind. Fourteen of the fifteen sentences are proven to fire in `test\boot.test.js`; the one left ("there is no `.env`") is not, because proving it means deleting the developer's own file |
-| **A backup is believed because it was restored.** `npm run backup` writes `<stamp>-<db>/` holding `archive.gz`, `photos/` and a `manifest.json` that counts every collection *before* anything is compressed; `npm run restore --into <other-db>` reads it back, and refuses to write over the database the backup came from, to run with no `--into`, to trust a folder this tool did not write, or to restore bytes that do not match the manifest's hash. `--keep N` prunes the older folders. Both tools stream through `docker exec`, so the archive never has to sit anywhere a password can be guessed at — and the whole thing was run against the real 98-document database, then a student was signed in through the restored copy and the source was read back to prove it never saw that write (stage 9d, NFR-5.2) | mongorestore 100.18 exits **0** having restored **zero documents** unless `--nsInclude` names the source database: the rename flags alone match nothing, and "success" is the sound of an empty room. Found by running both spellings by hand; `restore.js` carries the flag and the sentence explaining it |
-| **`deploy\` is the shape of a real server, and was rehearsed as one**: a two-stage Dockerfile that builds the site and then throws the toolchain away, so the runtime image holds `api/` and `web/dist/` and nothing else; a production compose file whose Mongo publishes **no port** and whose API binds `127.0.0.1:`, so the only way in is through a proxy; named volumes for the data and for the photos; a `/api/health` healthcheck the API has to pass before the site starts; `init: true` with a 15-second grace period so a closing chat socket gets its goodbye; and Caddy and nginx configs that pass `Upgrade`, turn off `proxy_buffering` and raise the body limit to 10 MB so a live thread and a photo survive the hop — with both saying out loud to set **no** CSP and no HSTS in the proxy, because those belong to the app (stage 9d) | The rehearsal reached the API on loopback, so the TLS half of those proxy configs was written and read and never carried a byte. And none of this is *on* a server: the first real deployment will be the first time `NODE_ENV=production` meets a network |
+| **Eighteen configuration refusals, ten of them production-only**: an http `PUBLIC_APP_URL` (the session cookie is `Secure`, so every login would look like a wrong password), an http entry anywhere in `WEB_ORIGIN`, the site served at an origin the socket handshake will not accept — the failure where chat is silently dead and nothing else looks broken — no SMTP, the template database password still in place, `PHOTO_DIR` inside the served build, `DEV_AUTO_VERIFY` on (see "Where the emails go while you are developing"), `TRUST_PROXY_HOPS` unset or not a whole number, `SERVE_WEB` on with nothing built, a `SESSION_SECRET` empty or under 32 characters, an empty `MONGO_URL`, an SMTP host with no credentials, a `PHOTO_STORE` that is neither `disk` nor `r2` (a store that fell back to disk by itself would put the pictures back on the machine that was meant to stop holding them), `PHOTO_STORE=r2` with any of its endpoint / bucket / access key / secret missing, an http `R2_ENDPOINT` (every read and write signs itself with `R2_SECRET_ACCESS_KEY`, so an unencrypted line would carry the signature of somebody holding the whole bucket), and no `.env` at all with nothing supplied by the environment. `/api/health` reports which store is live and whether it answered, so a photo problem says so somewhere other than as a blank profile. Proven in both directions: a correct production config boots and says nothing, and the *same* keys under `NODE_ENV=development` do not borrow the production gates (stage 9d) | A gate can only refuse to start. Nothing watches a running server: `restart: unless-stopped` is the whole of the supervision, and there is no alerting of any kind. All eighteen sentences are proven to fire in `test\boot.test.js`, including the last one, which is reached by holding `fs.existsSync` down for this project's own `.env` path — so the developer's real file is never moved or read: both keys missing, only `SESSION_SECRET` missing, and a complete environment with no file, which must say nothing. That last gate's advice was also wrong for a platform host until now — on Render, Railway or Fly, or inside the shipped image, there is no `.env` to create, so the refusal names both routes: copy `.env.example` on a laptop, set the missing keys as environment variables in the host's dashboard |
+| **A backup is believed because it was restored.** `npm run backup` writes `<stamp>-<db>/` holding `archive.gz`, `photos/` and a `manifest.json` that counts every collection *before* anything is compressed and records which store the photos came from; `npm run restore --into <other-db>` reads it back, and refuses to write over the database the backup came from, to run with no `--into`, to trust a folder this tool did not write, or to restore bytes that do not match the manifest's hash. `--keep N` prunes the older folders, and photos come back by one of two flags — `--photos-into <folder>` for a disk restore, `--push-photos` for a bucket, which checks every name against what the bucket already holds *before* writing any of them. Against a container both tools stream through `docker exec`, so the archive never has to sit anywhere a password can be guessed at; a hosted database has no container here, so `MONGODUMP_BIN` points at an installed `mongodump` and the same code runs against `MONGO_URL` directly. The whole thing was run against the real 98-document database, then a student was signed in through the restored copy and the source was read back to prove it never saw that write (stage 9d, NFR-5.2) | mongorestore 100.18 exits **0** having restored **zero documents** unless `--nsInclude` names the source database: the rename flags alone match nothing, and "success" is the sound of an empty room. Found by running both spellings by hand; `restore.js` carries the flag and the sentence explaining it. The hosted half of this has been read and unit-proven against an Atlas-shaped connection string, never run against a real Atlas |
+| **`deploy\` is the shape of a real server, and was rehearsed as one**: a two-stage Dockerfile that builds the site and then throws the toolchain away, so the runtime image holds `api/` and `web/dist/` and nothing else; a production compose file that takes its `MONGO_URL` from `deploy\prod.env` and starts a database of its own only when asked — resolved both ways, one service by default and two with `--profile local-db`, the container publishing **no port** either way — while the API binds `127.0.0.1:`, so the only way in is through a proxy; named volumes for the data and for the photos, the second unused once `PHOTO_STORE=r2`; a `/api/health` healthcheck the API has to pass before the site starts; `init: true` with a 15-second grace period so a closing chat socket gets its goodbye; and Caddy and nginx configs that pass `Upgrade`, turn off `proxy_buffering` and raise the body limit to 10 MB so a live thread and a photo survive the hop — with both saying out loud to set **no** CSP and no HSTS in the proxy, because those belong to the app (stage 9d) | The rehearsal reached the API on loopback, so the TLS half of those proxy configs was written and read and never carried a byte. And none of this is *on* a server: the first real deployment will be the first time `NODE_ENV=production` meets a network |
 | | **A load test.** **NFR-1.3** (2,000 concurrent students) has never been measured — the most this build has held is one rehearsal stack and one browser. **NFR-6.1** (matching and messaging scaled independently) is not met, and that is a decision, not an oversight: the chat runs inside the API process on `ws`, which is what the file-architecture document's separate Python chat service would have bought instead. Both limits are restated under "What 9d does not do" | |
-| 203 automated tests across 16 files, with the safety guards proven to fail when the rule they guard is broken — including eleven that were checked by deliberately re-breaking them: a socket that stops answering the heartbeat, a history page that loses a line, a reveal door mutated to let a single consent through, a bell that rings for a thread already on screen, a statistics panel asked to call an empty database a 0% match rate, a **Verify student status** mutated so that it undid a suspension a report had decided, the response-header middleware taken off the front of the app, `trust proxy` set back to 1 so a forged `X-Forwarded-For` bought a fresh login budget, the export's block filter widened to `filter(block => true)` so the data file named a block made *against* its own requester — which failed two subtests, one on the redaction and one on the access/deletion tally — and the copy guard, which was proven by typing a real college's name and its two email domains into a page and watching `npm run build` fail with all three named and an exit code of 1. The eleventh re-broken one is the race line on a staff card: writing `identity: 1` into the projection in `src\services\staff.js` and onto the card made the queue subtest fail, and the service was then put back. The rest of what the appearance answers brought are **outside** guards — assertions on what a suggestion card, a report excerpt, a staff payload and the matching projection do or do not carry, including that no race word appears in any of them and that three students differing only in that line come out on the same score | |
+| 238 automated tests across 19 files, with the safety guards proven to fail when the rule they guard is broken — including twelve that were checked by deliberately re-breaking them: a socket that stops answering the heartbeat, a history page that loses a line, a reveal door mutated to let a single consent through, a bell that rings for a thread already on screen, a statistics panel asked to call an empty database a 0% match rate, a **Verify student status** mutated so that it undid a suspension a report had decided, the response-header middleware taken off the front of the app, `trust proxy` set back to 1 so a forged `X-Forwarded-For` bought a fresh login budget, the export's block filter widened to `filter(block => true)` so the data file named a block made *against* its own requester — which failed two subtests, one on the redaction and one on the access/deletion tally — and the copy guard, which was proven by typing a real college's name and its two email domains into a page and watching `npm run build` fail with all three named and an exit code of 1. The eleventh re-broken one is the race line on a staff card: writing `identity: 1` into the projection in `src\services\staff.js` and onto the card made the queue subtest fail, and the service was then put back. The twelfth is a database password in an error message: `scripts\backupLib.js` was set back to interpolating the raw `MONGO_URL` into its "names no database" refusal, and the subtest failed on exactly that word — the string Atlas prints is the one most likely to trip the refusal, and its password is in it. The rest of what the appearance answers brought are **outside** guards — assertions on what a suggestion card, a report excerpt, a staff payload and the matching projection do or do not carry, including that no race word appears in any of them and that three students differing only in that line come out on the same score | |
 
 The `/signup`, `/login`, `/forgot`, `/reset`, `/verify`, `/profile`, `/match`, `/chats`,
 `/chats/:id`, `/chats/:id/reveal`, `/me`, `/notifications`, `/account` and `/staff` screens
@@ -628,7 +628,8 @@ UNMASK\
     src\models\Message.js one line of chat: who sent it and what it said, nothing else
     src\models\Pass.js   a decline, with the 30-day expiry Mongo enforces itself
     src\services\        auth.js (register → delete), sessions.js, mail.js
-    src\services\        profile.js (the form's rules, the contact guard), photos.js (disk)
+    src\services\        profile.js (the form's rules, the contact guard), photos.js (the photo rules no store may weaken)
+    src\services\photo-store\  index.js picks the driver — disk.js (a folder) | r2.js (a private Cloudflare bucket)
     src\services\        institutions.js (who may register, the preference ranking, the staff edits)
     src\services\        matching.js (compatibility, scoring, the sealed suggestion token)
     src\services\        chat.js (the thread, the message budget, what may go on a wire)
@@ -638,7 +639,7 @@ UNMASK\
     src\routes\          health, meta, auth, profile, matches, chats, institution-requests
     src\routes\staff.js  the review queue, the numbers, the eligibility lever, and the institutions screen
     src\routes\reveals.js the only router in the API that serves one student's name or face to another
-    src\storage\photos\  uploaded pictures, gitignored, and served by no URL
+    src\storage\photos\  uploaded pictures while PHOTO_STORE=disk — gitignored, and served by no URL
     scripts\seed.js      the starting institutions and the four demo accounts, and --reset
     test\api.test.js     the guards that must never be able to slip
     test\institutions.test.js  a college added by staff over HTTP is one the whole product already handles (NFR-SCALE-1), against unmask_test_institutions
@@ -755,21 +756,29 @@ the second one exists to check the first:
 ```
 npm run backup                                        → api\backups\<stamp>-unmask
 npm run backup -- --to D:\backups --keep 30           onto a disk the server is not on
+npm run backup -- --no-photos                         the database only
 npm run restore -- <that folder> --into unmask_rehearsal
 npm run restore -- <that folder> --into unmask_rehearsal --photos-into D:\rehearsal-photos
+npm run restore -- <that folder> --into unmask_rehearsal --push-photos
 ```
 
 Each folder holds three things: `dump.archive.gz` (the whole database, one gzip
-stream), `photos\` (a copy of `api\storage\photos`, same relative paths), and
+stream), `photos\` (a copy of every photo the configured store holds — same relative
+paths from `PHOTO_DIR`, one `photos/<name>` prefix from a bucket), and
 `manifest.json`. The manifest is the point. It records the count of every collection
-**before** the dump ran, the byte size of the archive and its SHA-256 — so a restore
-can be *checked* rather than believed. `restore.js` verifies the hash before it writes
-anything, then reads the target back and prints `expected` against `restored` per
+**before** the dump ran, which store the pictures came and would go back to, the byte
+size of the archive and its SHA-256 — so a restore can be *checked* rather than
+believed, and so a bucket is never restored into a folder by accident. `restore.js`
+verifies the hash before it writes anything, then reads the target back and prints
+`expected` against `restored` per
 collection. Any disagreement is exit 1, not a paragraph you have to read. The archive
 also refuses to be restored over the database it came from: `--into` is required, and
 a real disaster recovery is done by pointing `MONGO_URL` at the rehearsal name and
 restarting, which is one deliberate decision instead of one flag away from an
-overwrite.
+overwrite. `--photos-into` and `--push-photos` are the two halves of that same care on
+the photo side, and giving both is a usage error; a push checks every name against the
+bucket before it writes any of them, because half a restored set of photos is worse
+than none.
 
 `mongodump` and `mongorestore` are not installed on this machine — they are inside the
 `unmask-mongo` container, next to the database, and their `--dir` would be a folder
@@ -850,13 +859,54 @@ session cookie stays first-party on `https://unmask.example.ac.za`, no CORS pre-
 runs on any request, the chat socket is same-origin `wss://` on the port the page came
 from, and there is exactly one place where the response headers are decided.
 
+### The database and the photographs do not have to be on that machine
+
+Two keys decide where they live, and neither one is assumed any more:
+
+- **`MONGO_URL`** may be an Atlas string (`mongodb+srv://user:pass@cluster0.xxxxx.mongodb.net/unmask`)
+  instead of the local container. Nothing else in the code knows or cares where the
+  database runs — one rule applies: the `/unmask` before the `?` is **not optional**,
+  because `sourceDbName()` in `scripts\backupLib.js` refuses a connection string that names
+  no database rather than guessing at `test`, which is how an archive gets labelled with the
+  wrong database. `serverSelectionTimeoutMS` is 10,000 ms, which is what a DNS
+  round trip to a hosted cluster costs on a first connect and is not what a local socket does.
+- **`PHOTO_STORE=r2`** with `R2_ENDPOINT` (or `R2_ACCOUNT_ID`) + `R2_BUCKET` +
+  `R2_ACCESS_KEY_ID` + `R2_SECRET_ACCESS_KEY` moves the pictures into a Cloudflare R2
+  bucket with no custom domain on it — so its objects have **no public URL** —
+  spoken to over its S3 API with a signature this repository
+  writes itself (`api\src\services\photo-store\r2.js`) — there is no cloud SDK in the
+  dependency tree. The bytes still stream
+  through the API — the browser never learns an object URL, and the two photo doors are the
+  same two doors — so the rule named in "The one rule this product cannot afford to break"
+  below is untouched by the move. `PHOTO_DIR` is then
+  simply unused, and `/api/health` says which store is live and whether it answered.
+
+What is proven and what is not: both paths are proven **offline**, against a stand-in for
+the storage API and an Atlas-shaped connection string (`test\photoStoreR2.test.js`,
+`test\boot.test.js`, `test\backup.test.js`). The stand-in re-derives every AWS Signature
+Version 4 header from the bytes it received, by its own reference implementation, and the
+suite includes the case that proves it actually rejects a bad signature. None of it has
+been pointed at a real Atlas
+cluster or a real bucket — that needs the two accounts to exist first, and it is the first
+thing to check after creating them.
+
+On a host that deploys from git — Render, Railway, Fly — there is no `.env` file to edit,
+and the boot refusal says so instead of telling you to copy a template you cannot see.
+Those keys go in the host's environment tab. `PLAN\DEPLOY-RENDER.md` is the
+click-by-click version of that route, including why the **site cannot be split off onto a
+second frontend host**: the session is a first-party cookie and the chat socket is opened
+against `window.location.host`, so a Vercel page and a Render API can never share a login.
+
 | File | What it is |
 |---|---|
 | `deploy\Dockerfile` | two stages: compile the site, then put it inside the API image. The build context is the **project root**, because `config.js` resolves the build folder as a sibling of `api\` |
-| `deploy\docker-compose.prod.yml` | the database and that one process. Publishes `127.0.0.1:4100` and nothing else — the database gets no published port at all |
+| `deploy\docker-compose.prod.yml` | that one process, plus the database **only when asked**: the API is the default service and publishes `127.0.0.1:4100` and nothing else; `--profile local-db` adds a database container, which publishes no port either way — with Atlas there is nothing to add |
 | `deploy\prod.env.example` | the handful of values a server needs, each one commented with what breaks if it is wrong. Copy it to `deploy\prod.env` |
 | `deploy\Caddyfile` | TLS, automatic certificates, the socket pass-through — the shortest correct answer, and the file this project ships |
 | `deploy\nginx.unmask.conf` | the same shape for a server already running nginx, including the two lines that are easy to forget |
+| `PLAN\DEPLOYMENT-AZURE.md` | the same steps as an operations plan for one Azure VM: portal clicks, DNS, Docker, the first boot, HTTPS, the first accounts, backups, a rollback and an availability probe, each with the command that proves it worked. An operations plan, not a specification — it changes nothing the product promises |
+| `PLAN\Unmask-Deployment-Brief-Azure.docx` | that plan as a Word document, for reading away from the code |
+| `PLAN\DEPLOY-RENDER.md` | the same deployment aimed at a host that deploys from git, with Atlas for the database and a Cloudflare R2 bucket for the photos instead of a Docker container and a disk folder: the config refusals such a host prints and which key each one wants, where every value goes in that dashboard, the order to do the first-boot tasks in (seeding still has to run from a laptop, because `npm run seed` refuses in production), and what the free tiers actually cost you — the open network allow list, the 512 MB database, the spin-down that drops a chat socket |
 
 1. **Get the code onto the server**, and install Docker. Copy the folder excluding
    `api\storage` and `api\backups` — those are students' data and copies of it, not code.
@@ -971,14 +1021,28 @@ and NFR-2.3, and your architecture note "never trust the frontend to hide it".
 
 Concretely, this is held by design:
 
-- Photos are written to `api\storage\photos\`, which is outside the folder the web
-  server serves, and is gitignored. There is no URL that reaches a photo: the only
-  door is `/api/profile/photo`, which serves the bytes to the account that uploaded
-  them and `no-store` so no proxy keeps a copy. The stored filename is never returned
+- Photos live behind one seam, and the rule sits **above** it. With `PHOTO_STORE=disk`
+  they are written to `api\storage\photos\`, which is outside the folder the web server
+  serves, is gitignored, and is refused outright by a boot gate if you point it inside
+  the build. With `PHOTO_STORE=r2` they are objects in a Cloudflare R2
+  bucket, put and read over its S3 API with a signature computed inside the API
+  process from `R2_SECRET_ACCESS_KEY`, which no other process and no response ever
+  carries — the bucket has no public URL, and the only listing this build asks for is a
+  backup's, page by page under that same `photos/` prefix. There is no URL that reaches a photo under either
+  store: the only door is `/api/profile/photo`, which serves the bytes to the account
+  that uploaded them and `no-store` so no proxy keeps a copy. The stored filename is never returned
   by any response and never accepted from a URL, which a test asserts by planting a
   name in the database and trying to read it back. Stage 6 added the one second door,
   `/api/reveals/:id/photo`, and it reads the pair's own row for two consents before it
-  opens.
+  opens. A driver has to answer `put`, `get`, `del`, `probe` and a copy in and out, and
+  `test\photoStoreR2.test.js` holds the bucket to that against a stand-in for the
+  storage API which re-derives every signature from the bytes it was handed: a filename
+  that is not one this store would have written never goes out over the
+  network at all, a write that would overwrite an existing object is refused rather than
+  silently replaced, every object sits under a `photos/` prefix that is the only thing
+  ever listed, a delete reports false unless a head first found the object, a listing is
+  followed over every page it hands back, and no error message or health line carries the
+  secret key or the bucket's address.
 - The browser re-encodes the picture before uploading it, so the location a phone
   wrote into the file never reaches the server — and the server would not read it if
   it did, because it only ever stores the bytes it was handed.

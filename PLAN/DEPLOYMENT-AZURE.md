@@ -1,12 +1,18 @@
 # Deploying Unmask on Microsoft Azure
 
-Written 2026-09-27, against the code in this folder at commit `1e21973` and the files in
-`deploy\`. This is an operations plan, not a specification: it does not change what the
+Written 2026-09-27, against `main` at commit `b4c40c0` **plus the uncommitted edits sitting
+in this working tree** — the production boot gates in `api\src\config.js`, the photo-store
+seam and its Cloudflare R2 driver, the backup and restore scripts, the signup screen, and this
+`PLAN\` folder. That distinction matters at stage 6: a server that clones this repository
+gets the commit, **not** those edits, until somebody commits and pushes them. This is an
+operations plan, not a specification: it does not change what the
 product promises (that stays in `PLAN\DOCUMENT\`), it says where each piece runs, in what
 order to build it, and what to press to prove each step worked.
 
 The Word version of this plan, for reading outside the code, is
-`PLAN\Unmask-Deployment-Brief-Azure.docx`.
+`PLAN\Unmask-Deployment-Brief-Azure.docx`. It is **generated from this file** — change this
+one and regenerate, never the `.docx` (`node "C:\Users\hp\Documents\Qoder\2026-09-19\94c7596b\tools\make-deployment-brief.js"`,
+and `check-docx.js` beside it proves the result is a well-formed package).
 
 Everything below is written to be typed by somebody who did not build the site. Each step
 says **where** it is typed — *your laptop*, *the Azure portal*, or *the server* (an SSH
@@ -31,7 +37,8 @@ students' browsers
 |  mongo (container, mongo:7, NO published port at all)                                  |
 |                                                                                        |
 |  volumes:  unmask-prod_unmask-mongo-data    (the database)                             |
-|            unmask-prod_unmask-photos        (every profile photo)                      |
+|            unmask-prod_unmask-photos        (photos while PHOTO_STORE=disk; a          |
+|                                          bucket holds them when it says r2)            |
 +----------------------|-------------------------------------------------------------------+
                        |  nightly: npm run backup -> /var/backups/unmask -> azcopy
                        v
@@ -43,30 +50,50 @@ students' browsers
 were rehearsed together (README, stage 9d-5). They assume exactly three things: a server
 with Docker, a domain that resolves to it, and a proxy that terminates TLS. That is a VM.
 
-**Why not Azure App Service or Azure Container Apps.** Both are good products and both
-would need code changes first, because in each of them the container's own filesystem is
-temporary:
+**Why not Azure App Service or Azure Container Apps.** Both are good products, and both
+share one property that decides where your files go: the container's own filesystem is
+temporary, and is replaced on the next deploy.
 
-- Profile photos are written to a directory (`PHOTO_DIR=./storage/photos`) by
-  `api\src\services\photos.js`. There is no Azure Blob adapter in this codebase — the file
-  is opened with `fs`, and the only storage abstraction is "a folder the process can see".
-  On App Service or Container Apps that folder has to become an Azure Files share mounted
-  into the container, and the mount path has to match `PHOTO_DIR` exactly, or every photo
-  disappears on the next deploy.
+- Profile photos are written either to a directory (`PHOTO_DIR=./storage/photos`, the
+  `disk` driver) or to a **private bucket** (`PHOTO_STORE=r2`, the second driver).
+  Both sit behind one seam — `api\src\services\photos.js` calls `save/read/unlink/sniff`
+  and knows nothing about which — and there is no Azure Blob adapter. So on App Service or
+  Container Apps the answer is `PHOTO_STORE=r2`, which takes the container's
+  temporary filesystem out of the picture entirely; `PHOTO_DIR` simply goes unused, where
+  the disk driver would have needed an Azure Files share mounted at exactly that path or
+  lost every photo on the next deploy.
 - `deploy\docker-compose.prod.yml` builds the site *into* the API image and serves it from
   the same process (`SERVE_WEB=1`). That is what keeps the session cookie first-party and
   the WebSocket on the same origin. Splitting it into a static web app plus an API would
   mean two origins, and `WEB_ORIGIN` — which is also the socket's handshake allowlist —
-  would then have to carry both.
-- Azure Database for MongoDB requires TLS on the connection string; the URL the compose
-  file builds is a plain `mongodb://` inside a private Docker network. That is correct
-  *there*, and wrong against a managed instance.
+  would then have to carry both. **The rule is one origin, not one VM**: anything that
+  serves the built site and the API from the same address satisfies it.
+- A managed MongoDB that insists on TLS is fine: `MONGO_URL` is pasted as the provider
+  prints it, `mongodb+srv://…` included, and nothing else in the build changes. The plain
+  `mongodb://user:pass@mongo:27017` in the compose file is what the optional `local-db`
+  profile uses inside a private Docker network, not a ceiling on the product. The one
+  requirement is that the string names a database, because the backup tool reads its
+  collection counts and its manifest name out of that.
 
-Those are all solvable, and none of them is needed to serve a few thousand students. The
-right time to move off a VM is when the first real limit bites, and the README already
+Those were all real constraints when this plan was first written, and two of the three are
+now gone. What is left is that none of them is *needed* to serve a few thousand students.
+The right time to move off a VM is when the first real limit bites, and the README already
 names which limit that is likely to be (NFR-1.3, 2,000 concurrent students, has never been
 load-tested; the chat socket lives inside the API process, so one process is one unit of
 scaling).
+
+**The other route, and what it trades.** `PLAN\DEPLOY-RENDER.md` is the same product on a
+host that deploys from git — Atlas for the database, a Cloudflare R2 bucket for the photos, and
+still one process serving the site and the API on one origin, because that half is not
+optional. It removes most of stages 2 to 5 of this document: no VM, no Docker, no SSH, no
+Caddyfile, and TLS the host renews. What it gives up is the thing this document keeps
+coming back to. On a VM you know where every byte is and you can carry the disk into
+another machine; on a hosted tier you accept a network allow list you cannot narrow without
+paying for a dedicated outbound IP, a database free tier capped at 512 MB with backups you
+take by hand, an instance that sleeps after 15 idle minutes and drops every open chat
+socket when it does, and no `journalctl` to read when something goes wrong at 9pm. For a
+pilot at one campus those are reasonable terms; for the version a college signs on to, this
+document's shape is the one to grow into.
 
 **What this shape costs in availability:** one VM means one machine. If it is rebooted, the
 site is down for the ~10 seconds it takes the containers to come back. If the disk is
@@ -82,19 +109,34 @@ destroyed, you are restoring from Blob. That is stated again in stage 13.
 | 2 | A **domain name you control the DNS for** | e.g. `unmask.app`, `getunmask.co.za`, or a subdomain of a college domain. You need to be able to add an A record | TLS certificates are issued to a hostname. No DNS, no HTTPS, and no login: the session cookie is marked `Secure`, so over plain http every login looks like a wrong password (`PUBLIC_APP_URL` is a boot gate) |
 | 3 | A **mail sender that gives SMTP username + password + port 587** | Recommended: **Azure Communication Services → Email**, with SMTP authentication *enabled* on the resource (this is a setting, not automatic). Any other relay works too — Brevo, Mailgun, Amazon SES, your host's relay | Registration ends in an emailed confirmation link. `SMTP_HOST` empty in production is gate **P4** and the API refuses to boot. It cannot be skipped on a server, which is deliberate |
 | 4 | **SPF and DKIM** for the mail sender, published in that domain's DNS | ACS gives you two records to add after you verify the domain | Without them the confirmation emails land in spam, and a student who never sees the link never signs in — the failure looks like a broken site, not a broken mailbox |
-| 5 | Four **secrets you generate now and never commit** | `MONGO_PASSWORD`, `SESSION_SECRET`, the SMTP password, and the SSH key | `SESSION_SECRET` signs every login cookie. A 64-hex string is generated on your laptop with: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+| 5 | **Secrets you never commit** — four, or five if the photos go in a bucket | `MONGO_PASSWORD`, `SESSION_SECRET`, the SMTP password and the SSH key are yours to generate; `R2_SECRET_ACCESS_KEY` is generated *for* you by Cloudflare when the R2 API token is created. That one, with its Access Key ID, is the whole bucket's access control — it can read, write and delete every object in it, a student's face included — so both go in `deploy\prod.env` and nowhere else, and never in the site's code, where a browser could read them | `SESSION_SECRET` signs every login cookie. A 64-hex string is generated on your laptop with: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
 
-Two decisions only you can make, so decide them before stage 3:
+One thing to know and one thing to do before stage 3:
 
-- **Where the code comes from.** `C:\Users\hp\Desktop\UNMASK` is already a git repository
-  with one commit and **no remote**. Pushing it to a private GitHub repository is the
-  cleanest way to get it onto a server (and to be able to redeploy in ten minutes next
-  month), but pushing publishes the whole history — currently only the one commit — to
-  wherever you push it. The alternative is copying the folder up with `scp`, which keeps it
-  private but makes every future update a manual copy. **Either way `.env` never goes**:
-  `.gitignore` already excludes `.env`, `deploy\prod.env`, `storage\`, `outbox\` and
-  `backups\`, and the built image can contain no `.env` because `.dockerignore` excludes
-  them. Say the word and I will set up the private repository; I have not pushed anything.
+- **Where the code comes from.** Measured 2026-09-27, not assumed: `C:\Users\hp\Desktop\UNMASK`
+  is a git repository with three commits, its remote `origin` is
+  `https://github.com/Jabulani637/UNMASK`, and local `main` is level with `origin/main`
+  (0 ahead, 0 behind). **The code is already on GitHub.** An anonymous request to that URL
+  returns `200` while the same request for a name that does not exist returns `404`, so the
+  repository is **public** — anyone can read it.
+  - What that exposes was checked file by file, not assumed: 152 files are tracked, and the
+    only credential-shaped ones are `.env.example` and `deploy\prod.env.example`, which hold
+    no values. No `.env`, no `storage\`, no `outbox\`, no `backups\` is in the history —
+    `.gitignore` excludes them and `.dockerignore` keeps them out of the image as well. What
+    is readable is the code, the `PLAN\` documents and the `deploy\` files.
+  - **This is good news for stage 6**: `git clone` on the server works right now, with no
+    new setup, and `git pull --ff-only` in stage 10 is the whole update.
+  - If you would rather it were private: the repository page → **Settings** → **General** →
+    **Danger Zone** → **Change repository visibility** → Private. Say the word before you do
+    it if anything else already reads from the public URL, and note that making it private
+    does not un-cache what was readable while it was public — which is exactly why no real
+    secret may ever be committed here.
+  - **A clone is a snapshot of what is committed.** This working tree has edits that are not
+    committed (the boot gates, the photo-store seam, the backup scripts, the signup screen,
+    this `PLAN\` folder), so a server that clones today gets the three commits and none of
+    those. Before stage 6, run `git -C C:\Users\hp\Desktop\UNMASK status -s` and read the
+    list: everything in it is something the server will not have. Commit and push, then the
+    clone and the later `git pull --ff-only` say the same thing as this laptop.
 - **POPIA, which is a legal step and not a code step.** The product already gives you the
   mechanisms — a data access export (`/account` → Download everything we hold about you),
   a deletion that takes the whole account, a staff queue with a decision note, and a
@@ -258,22 +300,25 @@ does **not** run on this Node: it runs inside the container, which is built on
 `node:24-alpine` by `deploy\Dockerfile`. Do not "upgrade Node" on the host expecting it to
 change the site.
 
-> If `apt -y install caddy` says the package does not exist on your image, skip it and use
-> Caddy as a container instead, which stage 5 shows as a comment beside the same command.
-> Nothing else changes.
-
 ---
 
 ## 6. Stage 4 — put the code on the server
 
 **Where: the server.**
 
-Option A — a private git repository (recommended, because updates become one command):
+Option A — clone the repository that already exists (recommended; it is public, so this
+needs no credentials on the server, and every later update is one `git pull`):
 
 ```bash
-cd /opt && sudo mkdir -p /opt/unmask && sudo chown $USER /opt/unmask && cd unmask
-git clone <your-private-repo-url> .
+sudo mkdir -p /opt/unmask && sudo chown $USER /opt/unmask && cd /opt/unmask
+git clone https://github.com/Jabulani637/UNMASK .
 ```
+
+If you made the repository private in stage 1, clone with a GitHub **fine-grained personal
+access token** that has read-only access to that one repository
+(`https://x-access-token:<token>@github.com/Jabulani637/UNMASK`), or add the server's own SSH
+key to it. A deploy key is the narrower answer: read-only, one repository, and revocable
+without touching your account.
 
 Option B — copy the folder from your laptop (*PowerShell*, nothing on the server):
 
@@ -314,8 +359,31 @@ Fill it in like this — these are all the keys it has, and `docker compose` ref
 if a `:?` one is blank:
 
 ```
+# ---- the database ----
+# Either a hosted cluster, exactly as its console prints it:
+#   mongodb+srv://<user>:<password>@<cluster>.<id>.mongodb.net/unmask?retryWrites=true&w=majority
+# or the container this file can start, which needs `--profile local-db`:
+#   mongodb://unmask:<password>@mongo:27017/unmask?authSource=admin
+MONGO_URL=
+# Read only by that local-db container, which creates the account on its very first start
+# and cannot be told a different one afterwards. With a hosted database, unread.
 MONGO_USER=unmask
 MONGO_PASSWORD=<the strong password you generated in stage 1.5>
+
+# ---- the profile photos ----
+# `r2` keeps the bytes off this server; `disk` writes them into the mounted volume
+# under api/storage/photos. Anything else is refused at boot.
+PHOTO_STORE=r2
+# Read only when PHOTO_STORE=r2. R2 prints this address with the bucket's name on the
+# end of it (Settings tab of the bucket → S3 API); paste the whole string, the API splits
+# the name off. R2_ACCOUNT_ID on its own also builds the endpoint.
+R2_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+R2_BUCKET=<the bucket's exact name; connect no custom domain to it, or its pictures get a public URL>
+R2_ACCESS_KEY_ID=<the R2 API token's Access Key ID>
+R2_SECRET_ACCESS_KEY=<its Secret Access Key. This file only — never the site's code>
+R2_TIMEOUT_MS=8000
+
+# ---- the site, the session and the mail ----
 PUBLIC_APP_URL=https://app.yourdomain.com
 API_HOST_PORT=4100
 SESSION_SECRET=<64 hex characters from stage 1.5>
@@ -329,7 +397,9 @@ MAIL_FROM=Unmask <no-reply@app.yourdomain.com>
 | Key | What breaks if it is wrong | Where that is enforced |
 |---|---|---|
 | `PUBLIC_APP_URL` | Must start with `https://` and be **exactly** the address students type. It also becomes `WEB_ORIGIN`, which is both the browser allowlist *and* the chat socket's handshake allowlist — so if it is wrong, students load the page, sign in fine, and the "Live" badge on a chat never turns green | gate P1 + `api\src\realtime.js`, and a test asserts the two policies are not equal |
+| `MONGO_URL` | This is the one line that decides whether the site's data lives on this server or somewhere else — nothing else in the build distinguishes a hosted database from the container. It has to **name a database** (`/unmask`), not just a server, because the backup tool reads that name out of the string and writes it in the manifest. And with a hosted cluster, this server's address has to be on the provider's network allow list or every request times out | gate (empty is a refusal) + `scripts\backupLib.js` |
 | `MONGO_PASSWORD` | mongod creates this account on its **very first** start and will not accept a different one afterwards. Choose it now; changing it later means editing the deployment by hand | mongo container |
+| `PHOTO_STORE`, `R2_*` | A `PHOTO_STORE` that is neither `disk` nor `r2` is a refusal, and so is `r2` with any of endpoint / bucket / Access Key ID / Secret Access Key blank — a store that quietly fell back to disk would put the pictures back on the machine that was meant to stop holding them. An `http://` endpoint is refused on its own: every photo request signs the Secret Access Key into that line, so plain http would send it unencrypted. A *complete* set that is wrong (a revoked key, a bucket renamed) is not a refusal: it shows on `/api/health` as `photoStore.writable: false` with a `reason`, not as students' blank profiles. **The key pair is the whole of the bucket's access control** — it belongs in this file and on this server, and never in the site's code, where any browser could read it | gates + `api\src\routes\health.js` |
 | `SESSION_SECRET` | Under 32 characters the API refuses to boot. Changing it signs every existing student out (annoying, not dangerous) | gate P7 |
 | `SMTP_*` | Empty `SMTP_HOST` in production is a refusal. A wrong password is not a refusal — it is students who never get their link, so send yourself one | gate P4 |
 | `MAIL_FROM` | Must be a domain you can send from, and must not name a college — this address appears in every email a student receives | your mail provider's SPF check |
@@ -344,7 +414,7 @@ git status --short          # must NOT list deploy/prod.env — .gitignore alrea
 
 **Do not add `DEV_AUTO_VERIFY`.** It is the development shortcut you may have set to `1` in
 your laptop's `.env` so signing up does not need the emailed link. `NODE_ENV=production`
-refuses to start the API while it is on — that is one of the nine production-only gates —
+refuses to start the API while it is on — that is one of the ten production-only gates —
 and on a server nobody has to remember to turn it off because the server never has it.
 
 ---
@@ -389,22 +459,24 @@ a first start; "starting" for a minute is normal, "unhealthy" for five is not.
 
 ## 9. Stage 7 — turn on HTTPS
 
-**Where: the server.**
+**Where: the server.** Caddy runs as a third service in the same compose project, so there
+is nothing to install and no apt repository to trust. Two edits, then one command.
 
-If you installed Caddy as a host package in stage 3:
+**1.** Edit `deploy/Caddyfile`: change the **first line** to your hostname, and change the
+proxy target from `127.0.0.1:4100` to `api:4100` — because the proxy is now *inside* the
+compose network and reaches the API by service name:
 
 ```bash
-sudo cp /opt/unmask/deploy/Caddyfile /etc/caddy/Caddyfile
-sudo nano /etc/caddy/Caddyfile      # change the FIRST line to your hostname
-sudo systemctl enable --now caddy
-sudo systemctl reload caddy
-sudo journalctl -u caddy -n 30 --no-pager
+cd /opt/unmask
+nano deploy/Caddyfile
+#   app.yourdomain.com {                     <- was: unmask.example.ac.za {
+#           reverse_proxy api:4100 {         <- was: reverse_proxy 127.0.0.1:4100 {
 ```
 
-If Caddy is running as a container instead, the same file is mounted into a `caddy:2`
-service on the compose network — add it beside the other two in
-`deploy/docker-compose.prod.yml`, and then in the mounted copy of the Caddyfile change the
-proxy target from `127.0.0.1:4100` to `api:4100` because it is now inside the network:
+**2.** Add the proxy service to `deploy/docker-compose.prod.yml`, beside `mongo:` and
+`api:`, and add its two volumes to the `volumes:` block at the bottom of the file. The
+volumes are where the certificate and Caddy's own config live; without them you get a new
+certificate request on every deploy, and Let's Encrypt rate-limits that within a week.
 
 ```yaml
   proxy:
@@ -428,6 +500,21 @@ volumes:
   unmask-caddy-data:
   unmask-caddy-config:
 ```
+
+**3.** Start it:
+
+```bash
+docker compose -f deploy/docker-compose.prod.yml --env-file deploy/prod.env up -d
+docker compose -f deploy/docker-compose.prod.yml logs --tail 30 proxy
+```
+
+**Alternative, if you would rather Caddy ran on the host** (a machine that already has a
+web server, or a case where you want one system service for TLS): install Caddy from your
+Ubuntu image's package, copy `deploy/Caddyfile` to `/etc/caddy/Caddyfile`, leave the proxy
+target as `127.0.0.1:4100` — which is exactly what the shipped file says, and why the API
+publishes `127.0.0.1:4100` — and then `sudo systemctl enable --now caddy && sudo systemctl
+reload caddy`, watching `sudo journalctl -u caddy -n 30`. Do not run both: two processes
+cannot bind 443.
 
 Either way, Caddy asks Let's Encrypt for a certificate for the hostname, renews it forever,
 redirects http→https by itself, and passes `Upgrade` through without being told — which is
@@ -461,26 +548,21 @@ plain development port makes a browser refuse its own localhost for a month afte
    settings, and it must land in the inbox, not in spam. Click the link, then sign in.
 2. **Promote that account to staff. There is no route that does this, on purpose** — an
    admin session that could mint another admin is the shape of every privilege-escalation
-   story this project has read about, so the change needs the database and a keyboard:
-
-   ```bash
-   cd /opt/unmask/api
-   MONGO_URL="mongodb://unmask:<MONGO_PASSWORD>@127.0.0.1:27017/unmask?authSource=admin" \
-   NODE_ENV=production node scripts/staff.js you@yourinstitution.ac.za
-   ```
-
-   Wait — that URL only resolves from inside the compose network, and mongo publishes no
-   port. So run the script *from the API container*, which is already on that network and
-   already has the right environment in it:
+   story this project has read about, so the change needs the database and a keyboard. Run
+   the script **inside the API container**, which is already on the compose network where
+   `mongo` resolves and already holds the right `MONGO_URL` in its environment:
 
    ```bash
    docker exec -it unmask-server-api node scripts/staff.js you@yourinstitution.ac.za
    ```
 
-   (The container runs `node src/index.js` as its command, but the whole repository's API
-   folder is in the image, `scripts\` included, and the environment it starts with is
-   exactly the one the script needs. This is the command to use for `migrate-institutions`
-   too.)
+   Do not run it from the host with a `127.0.0.1` database URL: the mongo service publishes
+   **no** port at all, so there is nothing on the host's loopback to connect to. The
+   container's command is `node src/index.js`, but the whole API folder is in the image,
+   `scripts\` included, and its working directory is already `/srv/unmask/api`. This is the
+   same door to use for `migrate-institutions.js` (stage 10.4).
+
+   The script answers with the address it promoted, and `--revoke` takes it back off.
 3. **Open `/staff`** in that browser window. You should see the queue (empty), the tabs, and
    **Institutions** — where you add the college whose students you want next, and where the
    "my institution isn't listed" requests from the sign-up page arrive. A staff member adds
@@ -523,6 +605,24 @@ npm run backup -- --to /var/backups/unmask --keep 30
 
 That writes `/var/backups/unmask/<stamp>-unmask/` containing `archive.gz`, `photos/` and a
 `manifest.json` that counts every collection *before* anything is compressed.
+
+The same command takes two shapes, because where the photos and the database live is now
+configuration rather than fate:
+
+- **Photos in a bucket** (`PHOTO_STORE=r2`): drop the `PHOTO_DIR=` override entirely.
+  The tool asks the live store for its list and reads each object back — one request per
+  photo, so a few thousand pictures is a few thousand GETs and the run is slower, not
+  skipped — and the manifest records which store the bytes came from, so a restore knows
+  what it is holding.
+- **Database on Atlas**: there is no container to run `mongodump` inside, so
+  `MONGODUMP_BIN` points at an installed MongoDB Database Tools binary (download them once
+  on the VM, or run the backup from your laptop) and `MONGO_URL` is the provider's own
+  `mongodb+srv://…` string. `MONGO_CONTAINER` and the in-network `mongodb://…@mongo:27017`
+  URL above are only for the `local-db` profile this document assumes.
+
+The hosted spelling of both has been unit-proven offline against a stand-in store and an
+Atlas-shaped connection string, and never run against a real cluster — check it on the
+first night, not at the first disaster.
 
 Then copy it off the only disk it exists on. Create a private blob container
 `unmask-backups` in the storage account from stage 2, then:
@@ -624,7 +724,7 @@ which students' messages are between the migration and the backup.
 ```bash
 docker stats --no-stream                                             # is the box out of memory?
 docker compose -f deploy/docker-compose.prod.yml logs -f api         # what is it doing now?
-sudo journalctl -u caddy -f                                          # TLS and 502s
+docker compose -f deploy/docker-compose.prod.yml logs -f proxy       # TLS and 502s
 sudo df -h /var/lib/docker /var/backups                              # a full disk is a dead database
 sudo timedatectl                                                     # must be UTC; cron lines assume it
 ```
@@ -657,9 +757,15 @@ Stated here so nobody discovers them in a bad week:
    crosses the wire that names anybody, no peer's id is in a payload, and a copy is
    deleted when its owner deletes their account. If E2EE is a requirement, it is a design
    stage, not a config flag.
-4. **No password reset by email exists yet** — the forgot/reset flow ships, so check
-   `PLAN\DOCUMENT\unmask-requirements.md` against `README.md` before promising students a
-   way back into a forgotten account. (This is on the open list, not a surprise.)
+4. **The site knows only that the mail server accepted a message.** There is no delivery
+   log, no queue and no retry: a verification link, a reset link and the
+   "someone tried to register with your address" warning are each handed to SMTP once. A
+   full mailbox, a hard bounce or a domain whose SPF was never published is invisible here,
+   and it reaches you as a student saying *I never got the email*. The recovery is the
+   **Send the confirmation link again** button on the sign-in page, limited to four per
+   address per half hour, and nothing else. Password reset itself **does** ship
+   (`/forgot` → emailed link → new password, and every other device is signed out) — what
+   does not ship is any way to know the email went nowhere.
 5. **The rate limits are per IP address.** Behind a college NAT — which is exactly what a
    residence hall's wifi is — every student arrives as one address, and the wrong
    `TRUST_PROXY_HOPS` can either lock a whole building out of logging in or hand a guesser
@@ -680,9 +786,11 @@ Stated here so nobody discovers them in a bad week:
 
 ## Appendix A — the boot gates you will actually hit
 
-`api\src\config.js` refuses to start a production API on fifteen conditions, nine of them
-production-only. Each one names the key to edit and what goes wrong without it. The five
-that catch people on a first deploy:
+`api\src\config.js` refuses to start a production API on eighteen conditions, ten of them
+production-only. Each one names the key to edit and what goes wrong without it — and where
+there is no file to edit, which is true of any host that deploys from git, the same
+sentences say to set those keys as that host's environment variables instead. The ones that
+catch people on a first deploy:
 
 | Symptom on `docker compose logs api` | Key | Why it is a gate |
 |---|---|---|
@@ -691,6 +799,10 @@ that catch people on a first deploy:
 | "no SMTP" | `SMTP_HOST` empty | A confirmation link that goes nowhere means nobody finishes signing up, quietly |
 | "the template database password still in place" | `MONGO_PASSWORD` left as `change-me-local-only` | It is the first thing a scanner tries |
 | "`DEV_AUTO_VERIFY` on" | that key present | A shortcut through the mailbox must not reach a server |
+| "the choices are \"disk\" … or \"r2\"" | a typo in `PHOTO_STORE` | A store that silently fell back to disk would put the pictures back on the machine that was meant to stop holding them |
+| "PHOTO_STORE=r2 but … are missing" | `R2_ENDPOINT` (or `R2_ACCOUNT_ID`), `R2_BUCKET`, `R2_ACCESS_KEY_ID` or `R2_SECRET_ACCESS_KEY` | Every upload and every photo read would fail after the site looked healthy |
+| `R2_ENDPOINT is "http://…"` | that key | Every photo request signs the Secret Access Key into that line, so it must not cross an unencrypted one |
+| "No .env at … and the environment has no `MONGO_URL` or `SESSION_SECRET` either" | those two | Nothing can be read and nothing can be signed. On a laptop, copy `.env.example`; on a hosted service, set them in its dashboard |
 
 ## Appendix B — every hostname and name this plan uses
 

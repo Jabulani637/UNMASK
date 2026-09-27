@@ -290,4 +290,57 @@ test('stage 9d — a backup that a restore has to agree with', async t => {
     assert.equal(after.length, 1, after.join(', '));
     assert.ok(after[0] > before[before.length - 1], `the folder that survived was not the newest: ${after[0]} vs ${before.join(', ')}`);
   });
+
+  // The shape Atlas actually prints: `…mongodb.net/?appName=…`, with nothing between
+  // the host and the `?`. The refusal has to name the string it refused — that is how
+  // an operator finds the two characters to type — and it is thrown before anything
+  // connects, so its text is what a terminal and a container log are handed.
+  await t.test('a URI that names no database is refused without printing its password', () => {
+    const noDatabase = 'mongodb+srv://debokoanej_db_user:a-real-database-password@cluster0.ab1cd2.mongodb.net/?appName=Cluster0&compressors=zlib';
+    const keep = config.mongoUrl;
+    try {
+      config.mongoUrl = noDatabase;
+      assert.throws(lib.sourceDbName, (error) => {
+        assert.match(error.message, /names no database/);
+        assert.match(error.message, /cluster0\.ab1cd2\.mongodb\.net\/\?appName=Cluster0/);
+        assert.equal(error.message.includes('a-real-database-password'), false, 'the refusal printed the database password');
+        assert.match(error.message, /debokoanej_db_user:\*+\@/, 'the user name survived but its shape changed, so the string cannot be pasted back');
+        return true;
+      });
+    } finally {
+      config.mongoUrl = keep;
+    }
+  });
+
+  // Everything above talks to a container on this machine, so nothing above has ever
+  // parsed the shape a hosted database actually hands out. These four functions are
+  // pure string work, so the SRV form can be proven without a second database.
+  await t.test('an Atlas SRV string is read as carefully as a container URL', () => {
+    const atlas = 'mongodb+srv://unmask:a-real-database-password@cluster0.ab1cd2.mongodb.net/unmask?retryWrites=true&w=majority&authSource=admin';
+    const keep = config.mongoUrl;
+    try {
+      config.mongoUrl = atlas;
+      assert.equal(lib.sourceDbName(), 'unmask');
+      assert.equal(lib.databaseHost(), 'cluster0.ab1cd2.mongodb.net');
+      assert.equal(lib.databaseIsRemote(), true, 'a hosted database was called local, so the backup would go looking for a container');
+
+      // The password is the one thing that must not survive being written down; the
+      // user name is not a secret and the manifest records the redacted form.
+      const redacted = lib.redactedUrl();
+      assert.equal(redacted.includes('a-real-database-password'), false, 'the database password was printed');
+      assert.match(redacted, /ab1cd2\.mongodb\.net\/unmask/);
+
+      // The username, the host and the database all contain "unmask" here on purpose:
+      // a rehearsal target has to be the only thing that changes.
+      const into = lib.urlForDb('unmask_rehearsal');
+      assert.equal(into, 'mongodb+srv://unmask:a-real-database-password@cluster0.ab1cd2.mongodb.net/unmask_rehearsal?retryWrites=true&w=majority&authSource=admin');
+      assert.match(into, /^mongodb\+srv:\/\/unmask:a-real-database-password@cluster0\./, 'something other than the database name was rewritten');
+
+      config.mongoUrl = 'mongodb://unmask:pw@127.0.0.1:27017/unmask?authSource=admin';
+      assert.equal(lib.databaseIsRemote(), false, 'the container on this machine was called remote');
+      assert.equal(lib.sourceDbName(), 'unmask');
+    } finally {
+      config.mongoUrl = keep;
+    }
+  });
 });

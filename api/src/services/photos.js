@@ -1,12 +1,13 @@
 'use strict';
 /**
- * Profile photos on disk. FR-2.2, FR-2.3, FR-2.5, NFR-2.3.
+ * Profile photos. FR-2.2, FR-2.3, FR-2.5, NFR-2.3.
  *
  * Three rules shape this file:
  *
- *   1. The folder is `api\storage\photos\`, which the web server does not
- *      publish. There is no URL for a photo, so there is no URL to guess, and a
- *      misconfigured static handler cannot expose it either.
+ *   1. A photo has no address a person can use. On disk it is a folder the web
+ *      server does not publish; in an object store it is a private bucket. Either
+ *      way the only way to a picture is through this API, which checks the reveal
+ *      before it opens the bytes.
  *   2. A filename is 18 random bytes. It is not derived from the user, the
  *      profile, the time, or anything else a person could work out — knowing an
  *      account id gets you nothing.
@@ -14,16 +15,18 @@
  *      `Content-Type` the browser sent, or what the picker claimed. An SVG is
  *      script waiting to run in someone's profile card; a `.jpg` that is really
  *      HTML is the same trick wearing a better costume.
+ *
+ * Where the bytes are kept is `./photo-store`'s choice (`PHOTO_STORE=disk|r2`).
+ * Everything decided here is the same either way, which is the point of the split:
+ * a driver cannot weaken a rule it never sees.
  */
 
 const crypto = require('crypto');
-const fs = require('fs/promises');
-const path = require('path');
 
 const { config } = require('../config');
 const { UserError } = require('../errors');
-
-const SAFE_NAME = /^[A-Za-z0-9_-]{8,64}\.(jpg|jpeg|png|webp)$/;
+const store = require('./photo-store');
+const { isOurName } = require('./photo-store/photo-name');
 
 /**
  * The handful of image formats worth accepting, by their opening bytes.
@@ -49,20 +52,6 @@ function sniff(buffer) {
 }
 
 /**
- * Where a stored name belongs on disk, refusing anything that is not already
- * known to be one of our own filenames. The check is not decoration: the name
- * comes out of a database document, and a document that got written some other
- * way should not be able to read `../../.env`.
- */
-function pathFor(fileName) {
-  if (typeof fileName !== 'string' || !SAFE_NAME.test(fileName)) return null;
-  const absolute = path.join(config.photoDir, fileName);
-  const root = path.resolve(config.photoDir);
-  if (!path.resolve(absolute).startsWith(root + path.sep)) return null;
-  return absolute;
-}
-
-/**
  * Write an image after deciding from its bytes what it is. Returns the stored
  * name, which is the only handle that ever goes into the database.
  */
@@ -83,26 +72,17 @@ async function save(buffer) {
   }
 
   const name = `${crypto.randomBytes(18).toString('base64url')}.${format.ext}`;
-  const target = pathFor(name);
-
-  await fs.mkdir(config.photoDir, { recursive: true });
-  // No shared temp name and no overwrite: this either writes a file nobody else
+  // No shared temp name and no overwrite: this either writes somewhere nobody else
   // could have been holding, or it fails.
-  await fs.writeFile(target, buffer, { flag: 'wx', mode: 0o600 });
+  await store.current().put(name, buffer, format.mime);
 
   return { fileName: name, mime: format.mime, bytes: buffer.length };
 }
 
-/** The bytes, or null if the file is not there. Never throws on a missing photo. */
+/** The bytes, or null if the photo is not there. Never throws on a missing photo. */
 async function read(fileName) {
-  const target = pathFor(fileName);
-  if (!target) return null;
-  try {
-    return await fs.readFile(target);
-  } catch (err) {
-    if (err.code === 'ENOENT') return null;
-    throw err;
-  }
+  if (!isOurName(fileName)) return null;
+  return store.current().get(fileName);
 }
 
 /**
@@ -111,16 +91,46 @@ async function read(fileName) {
  * student's picture cannot outlive the row that described it.
  */
 async function unlink(fileName) {
-  if (!fileName) return false;
-  const target = pathFor(fileName);
-  if (!target) return false;
+  if (!isOurName(fileName)) return false;
+  return store.current().del(fileName);
+}
+
+/** Which store the bytes are in, and whether it answered. For /api/health. */
+async function status() {
+  const driver = store.current();
+  // A store that cannot be reached is reported, not thrown: this backs a health
+  // endpoint, and 500ing the thing you consult during an outage is a bad idea.
+  // Nothing from the error is published — no URL, no path, no key — because the
+  // endpoint is unauthenticated.
   try {
-    await fs.unlink(target);
-    return true;
-  } catch (err) {
-    if (err.code === 'ENOENT') return false;
-    throw err;
+    const probed = await driver.probe();
+    return { backend: driver.name, writable: Boolean(probed.ok), reason: probed.reason || null };
+  } catch {
+    return { backend: driver.name, writable: false, reason: 'unreachable' };
   }
 }
 
-module.exports = { save, read, unlink, sniff, pathFor };
+/** Every photo this store holds, as `{ name, bytes }`. Used by the backup script. */
+async function list() {
+  return store.current().list();
+}
+
+/** Which store is in use, for a log line or a manifest. */
+function backend() {
+  return store.current().name;
+}
+
+/**
+ * Copy every photo out of the store into a folder, and back in. The backup and
+ * restore scripts use these, which is why no caller outside this file ever sees a
+ * driver: what a backup contains should not depend on which store is configured.
+ */
+async function backupPhotos(destFolder) {
+  return store.current().copyTo(destFolder);
+}
+
+async function restorePhotos(srcFolder) {
+  return store.current().copyFrom(srcFolder);
+}
+
+module.exports = { save, read, unlink, sniff, status, list, backend, backupPhotos, restorePhotos };

@@ -1,5 +1,5 @@
-# The production shape of this project: the database, and one process that serves
-# both the site and the API in front of it.
+# Production: the database, the photos, and one process that serves both the site and
+# the API in front of them.
 #
 #   docker compose -f deploy/docker-compose.prod.yml --env-file deploy/prod.env up -d --build
 #
@@ -7,13 +7,33 @@
 # development database on a laptop, with its port published to 127.0.0.1 so the API can
 # reach it directly, and it works without any of the keys below. This one assumes a
 # server, a domain and a proxy that terminates TLS, and refuses to start without them —
-# which is the same bargain `api/src/config.js` makes at boot, in eight sentences that
+# which is the same bargain `api/src/config.js` makes at boot, in eighteen sentences that
 # each name one thing that would otherwise go quietly wrong.
+#
+# Two of the services here are optional, and the way they are made optional is the point
+# of this file:
+#
+#   the database   — a hosted MongoDB (an Atlas `mongodb+srv://` string) needs nothing
+#                    started here, so `MONGO_URL` comes from deploy/prod.env and the
+#                    `mongo` service stays asleep. To run the database on this server
+#                    instead, ask for it by name — the flag goes after the file, since
+#                    `docker compose --profile x -f ...` is an unknown flag:
+#
+#                      docker compose -f deploy/docker-compose.prod.yml --env-file deploy/prod.env --profile local-db up -d --build
+#
+#                    and set MONGO_URL to
+#                    `mongodb://<user>:<password>@mongo:27017/unmask?authSource=admin`.
+#                    Both forms were run against this file: without the flag Compose
+#                    resolves one service (`api`), with it, two (`api`, `mongo`).
+#   the photos     — `PHOTO_STORE=r2` puts them in a private Cloudflare R2 bucket, and
+#                    the `unmask-photos` volume below then holds nothing at all. Leaving
+#                    the volume mounted costs nothing and means switching back to
+#                    `PHOTO_STORE=disk` does not silently start from an empty folder.
 #
 # Nothing here is exposed to the internet. The only published port is 4100 on
 # 127.0.0.1, for the proxy (see Caddyfile / nginx.unmask.conf in this folder) to forward
-# to after it has done HTTPS. The database publishes no port at all: it is reachable
-# only over this compose network, by name.
+# to after it has done HTTPS. A database started by this file publishes no port at all:
+# it is reachable only over this compose network, by name.
 
 # A fixed project name, so the volumes are called `unmask-prod_unmask-mongo-data` and
 # `unmask-prod_unmask-photos` on the server instead of being named after whichever folder
@@ -22,8 +42,11 @@
 name: unmask-prod
 
 services:
+  # Only created with `--profile local-db`. Everything below that mentions it — the
+  # credentials in prod.env, this service's volume — is otherwise unused.
   mongo:
     image: mongo:7
+    profiles: ["local-db"]
     # A name of its own, deliberately *not* the development file's `unmask-mongo`: a
     # container name is global on a Docker host, and a second file claiming the name a
     # running database answers to does not fail politely — it recreates the container
@@ -34,8 +57,8 @@ services:
     # No `ports:` block. Publishing 27017 on a server is how a database ends up in a
     # scan report; the API reaches it as `mongo:27017` because they share this network.
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:?set MONGO_USER in deploy/prod.env}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?set MONGO_PASSWORD in deploy/prod.env}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-unmask}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?set MONGO_PASSWORD in deploy/prod.env, or run without --profile local-db}
       MONGO_INITDB_DATABASE: unmask
     volumes:
       - unmask-mongo-data:/data/db
@@ -56,9 +79,9 @@ services:
     # and the chat socket never gets its 4-second goodbye.
     init: true
     stop_grace_period: 15s
-    depends_on:
-      mongo:
-        condition: service_healthy
+    # No `depends_on`. With a hosted database there is no service here to wait for, and
+    # with one started below the API already survives it not being ready: it retries the
+    # connection every three seconds and /api/health says "degraded" in the meantime.
     ports:
       # 4100 on the loopback interface only — never a public address. The host port is a
       # variable so this file can be rehearsed on a machine that already runs the
@@ -68,8 +91,11 @@ services:
       NODE_ENV: production
       PORT: 4100
 
-      # The database, by service name, from inside the network.
-      MONGO_URL: mongodb://${MONGO_USER}:${MONGO_PASSWORD}@mongo:27017/unmask?authSource=admin
+      # The database, exactly as the provider's console prints it. Nothing else in the
+      # build distinguishes a hosted database from a container, so this is the one line
+      # that decides which of the two this is — and it has to name a database, not just
+      # a server, or the backup script has no name to write in its manifest.
+      MONGO_URL: ${MONGO_URL:?paste the connection string in from your database provider}
 
       # One value, set twice on purpose: WEB_ORIGIN is both the browser's allowlist and
       # the WebSocket handshake allowlist (api/src/realtime.js). If it does not contain
@@ -86,7 +112,23 @@ services:
 
       SERVE_WEB: "1"
       WEB_DIST: ./web/dist
+
+      # Where a profile photo is written. `r2` keeps the laptop — and this container's
+      # filesystem, which is deleted whenever the image is replaced — out of the
+      # picture; `disk` uses the folder mounted from the volume below.
+      PHOTO_STORE: ${PHOTO_STORE:-disk}
       PHOTO_DIR: ./storage/photos
+      # Read only when PHOTO_STORE=r2. The secret key is the whole of the bucket's
+      # access control, so it comes from prod.env and appears in no other file; a wrong
+      # value here is reported by /api/health as photoStore.reason, not as a blank
+      # profile. R2_BUCKET has no default on purpose — a bucket name this file invented
+      # would silently write pictures into the wrong place, or the wrong account.
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_BUCKET: ${R2_BUCKET:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_TIMEOUT_MS: ${R2_TIMEOUT_MS:-8000}
 
       # Which email domains may register is not in this file. It is one document per
       # institution in the `institutions` collection, and a staff member adds a college
@@ -105,7 +147,8 @@ services:
       MAIL_FROM: ${MAIL_FROM:-Unmask <no-reply@your-domain>}
     volumes:
       # The uploaded photos, in a named volume rather than in the container's writable
-      # layer, which is deleted the moment the image is replaced.
+      # layer, which is deleted the moment the image is replaced. Unused while
+      # PHOTO_STORE=r2.
       - unmask-photos:/srv/unmask/api/storage
     logging:
       driver: json-file

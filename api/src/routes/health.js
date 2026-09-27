@@ -15,6 +15,7 @@ const db = require('../db');
 const { config } = require('../config');
 const Institution = require('../models/Institution');
 const mail = require('../services/mail');
+const photos = require('../services/photos');
 
 const router = express.Router();
 
@@ -42,8 +43,9 @@ router.get('/', async (req, res) => {
       sessionSigning: Boolean(config.session.secret),
       emailTransport: mail.transportName(),
       activeInstitutions,
-      // A path is never published: this endpoint is unauthenticated.
-      photoStore: db.photoStoreWritable(config.photoDir),
+      // Which store holds the photos, and whether it answered. A path, a bucket
+      // name and a key are all deliberately absent: this endpoint is unauthenticated.
+      photoStore: await photos.status(),
       lastDatabaseError: mongo.lastError || null,
     },
   });

@@ -70,10 +70,28 @@ export default function Signup() {
             : 'The confirmation link expires in 24 hours and works once.'
         }
       >
+        {/* When the address already had an account, registering left its password
+            alone and the sign-in this page then attempted was refused. The sentence
+            saying so is the only thing that tells a returning student what actually
+            happened, so it is repeated here rather than dropped on the way to this
+            screen — it is the same sentence /login shows for the same refusal. */}
+        {error ? (
+          <p className="server-error" role="alert">
+            {error}
+          </p>
+        ) : null}
         <p className="server-line">{devNotice || (result ? result.message : '')}</p>
         <p className="hint">
-          {devNotice ? 'Continue to ' : 'Open it on this device, then '}
-          <Link to="/login">sign in</Link>.
+          {devNotice ? (
+            <>
+              Continue to <Link to="/login">sign in</Link> — or, if this address already had an account with a
+              password you do not have, <Link to="/forgot">set a new one</Link>.
+            </>
+          ) : (
+            <>
+              Open it on this device, then <Link to="/login">sign in</Link>.
+            </>
+          )}
         </p>
         {devNotice ? null : (
           <form

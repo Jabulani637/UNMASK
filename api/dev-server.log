@@ -1,5 +1,0 @@
-Unmask API listening on http://localhost:4100
-  health    http://localhost:4100/api/health
-  web origin(s) allowed: http://localhost:5273
-  email     no SMTP_HOST — verification links are written to api/outbox/ instead
-• Database connected. Indexes ready for: User, Profile.

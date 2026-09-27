@@ -34,7 +34,20 @@ async function connectWithRetry(attempt = 1) {
     console.error(
       `• Database not reachable${isUp ? '' : ' yet'} (attempt ${attempt}): ${err.message}`
     );
-    console.error(`  Is the container running?  docker compose up -d   (from UNMASK\\)`);
+    const host = db.databaseHost();
+    if (host.local) {
+      console.error('  Is the container running?  docker compose up -d   (from UNMASK\\)');
+    } else if (/querySrv|SRV/i.test(err.message)) {
+      // Measured on a laptop whose router refuses Node's DNS queries: this fails
+      // before the provider has been asked anything at all, so pointing at its
+      // allow list would send someone to the one place the problem is not.
+      console.error(
+        `  "${host.host}" was never resolved — this machine's DNS server refused the SRV query, so nothing about the database or its allow list has been checked yet.`
+      );
+      console.error('  Either give this adapter a resolver that answers (1.1.1.1 is the usual choice), or use the connection string Atlas prints when its DNS SRV option is switched off.');
+    } else {
+      console.error(`  Nothing on this machine serves "${host.host}", so check the provider: is this address on its access allow list, and has the database finished starting?`);
+    }
     console.error(`  /api/health will report "degraded" until it is. Retrying in ${RETRY_MS / 1000}s.`);
     await new Promise(resolve => setTimeout(resolve, RETRY_MS));
     return connectWithRetry(attempt + 1);

@@ -25,6 +25,7 @@ const path = require('path');
 
 const { config, configProblems } = require('../src/config');
 const db = require('../src/db');
+const photos = require('../src/services/photos');
 const lib = require('./backupLib');
 
 function usage(detail) {
@@ -92,7 +93,12 @@ async function main() {
     process.exit(1);
   }
 
-  const photos = withPhotos ? lib.copyPhotos(path.join(folder, 'photos')) : { files: 0, bytes: 0, skipped: true };
+  const photoStore = photos.backend();
+  const copied = withPhotos ? await photos.backupPhotos(path.join(folder, 'photos')) : { files: 0, bytes: 0, skipped: true };
+  const photosRecord = Object.assign(
+    { store: photoStore, dir: photoStore === 'disk' ? config.photoDir : null },
+    copied
+  );
 
   const manifest = {
     createdAt: new Date().toISOString(),
@@ -108,7 +114,7 @@ async function main() {
     },
     documents: totalDocs,
     collections: countsBefore,
-    photos: Object.assign({ dir: config.photoDir }, photos),
+    photos: photosRecord,
     nodeEnv: config.nodeEnv,
   };
   fs.writeFileSync(path.join(folder, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
@@ -120,9 +126,9 @@ async function main() {
     console.log(`    ${name.padEnd(16)} ${count}`);
   }
   console.log(
-    photos.skipped
+    copied.skipped
       ? '  photos     skipped (--no-photos)'
-      : `  photos     ${photos.files} file(s), ${photos.bytes.toLocaleString('en-US')} bytes`
+      : `  photos     ${copied.files} file(s), ${copied.bytes.toLocaleString('en-US')} bytes from the ${photoStore} store`
   );
   console.log(`  sha256     ${manifest.archive.sha256}`);
   console.log('\nKeep this folder somewhere the server is not. A backup next to the database it backs up is one disk failure away from being nothing.');

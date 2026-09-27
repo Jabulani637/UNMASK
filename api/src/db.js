@@ -4,7 +4,6 @@
  * same way and /api/health reports the same truth the routes see.
  */
 
-const fs = require('fs');
 const mongoose = require('mongoose');
 const { config } = require('./config');
 
@@ -14,7 +13,12 @@ async function connect() {
   mongoose.set('strictQuery', true);
   try {
     await mongoose.connect(config.mongoUrl, {
-      serverSelectionTimeoutMS: 4000,
+      // Longer than it looks. A hosted database behind `mongodb+srv://` resolves
+      // SRV records to find the replica set and then handshakes TLS with each
+      // member before the first query — a few seconds of work that a local
+      // container never asks for. Refusing to boot in four seconds on a server
+      // whose DNS is warm is not a health check, it is a false alarm.
+      serverSelectionTimeoutMS: 10000,
     });
     lastError = null;
     return mongoose.connection;
@@ -28,6 +32,25 @@ function state() {
   // 0 disconnected, 1 connected, 2 connecting, 3 disconnecting
   const ready = mongoose.connection.readyState === 1;
   return { ready, lastError };
+}
+
+/**
+ * Where MONGO_URL points, and whether that is this machine. The startup loop uses
+ * it to decide which sentence to print: asking "is the container running?" about a
+ * hosted database sends someone to check the one thing that is not the problem.
+ *
+ * The credentials are cut off before the host is read, so no part of a password can
+ * end up in a message that is written to a log.
+ */
+function databaseHost() {
+  const url = config.mongoUrl || '';
+  const afterAuth = url.slice(url.lastIndexOf('@') + 1).replace(/^[^:]+:\/\//, '');
+  const host = (afterAuth.split('/')[0].split(',')[0] || '').replace(/:\d+$/, '');
+  // Loopback, or a name with no dot in it — which is how a service on a compose
+  // network addresses its own database (`mongo`), and no hosted provider hands out
+  // an address that cannot be looked up on the public internet.
+  const local = /^(localhost|127\.0\.0\.1|::1|0\.0\.0\.0|\[::1\])$/.test(host) || (host !== '' && !host.includes('.'));
+  return { host, local };
 }
 
 /**
@@ -66,18 +89,4 @@ async function disconnect() {
   await mongoose.disconnect();
 }
 
-/**
- * The photo directory has to exist before an upload can land in it, and the
- * health endpoint should say whether it truly is writable rather than assume.
- */
-function photoStoreWritable(dir) {
-  try {
-    fs.mkdirSync(dir, { recursive: true });
-    fs.accessSync(dir, fs.constants.W_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-module.exports = { connect, state, disconnect, ensureIndexes, photoStoreWritable };
+module.exports = { connect, state, disconnect, ensureIndexes, databaseHost };

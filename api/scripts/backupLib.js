@@ -3,19 +3,21 @@
  * The parts both backup scripts need: how to reach mongodump/mongorestore, what is
  * in the database right now, and how a backup folder is laid out.
  *
- * mongodump is not installed on this machine — it is inside the `unmask-mongo`
- * container, which is where the database itself runs. So the archive is streamed
- * through `docker exec`'s stdout rather than written to a path the container
- * cannot see, and the same pipe runs backwards for a restore. Point
- * `MONGODUMP_BIN` at a mongodump binary to skip Docker entirely, which is what an
- * Atlas or a hosted-Mongo deployment would do.
+ * On a development machine mongodump is not installed — it is inside the
+ * `unmask-mongo` container, which is where the database itself runs. So the archive
+ * is streamed through `docker exec`'s stdout rather than written to a path the
+ * container cannot see, and the same pipe runs backwards for a restore.
+ *
+ * A hosted database has no container on the server, so there is nothing to exec
+ * into: point `MONGODUMP_BIN` at an installed mongodump and the same code paths run
+ * against `MONGO_URL` directly. That is what an Atlas deployment does.
  *
  * A backup folder is:
  *
  *   backups/2026-09-26T20-15-04Z-unmask/
  *     dump.archive.gz    the whole database, one file, gzip
  *     manifest.json      what it holds, counted before it was written
- *     photos/...         a copy of PHOTO_DIR, same relative paths
+ *     photos/...         a copy of every photo the configured store holds
  *
  * The manifest is the part that makes a restore checkable. Without a count taken
  * *before* the dump, "the restore succeeded" only means "the restore did not
@@ -40,8 +42,34 @@ function sourceDbName() {
   const afterAuth = withoutScheme.slice(withoutScheme.lastIndexOf('@') + 1);
   const [hosts, rest] = [afterAuth.split('/')[0], afterAuth.split('/').slice(1).join('/')];
   const db = (rest.split('?')[0] || '').trim();
-  if (!db) throw new Error(`MONGO_URL names no database (nothing after the host part): ${config.mongoUrl}`);
+  // The URI is in the message on purpose — an operator has to see which path the
+  // string is missing — but never the raw one: this throws before anything is
+  // connected, so its text is printed by the script's catch and lands in a log.
+  if (!db) throw new Error(`MONGO_URL names no database (nothing after the host part): ${redactedUrl()}`);
   return db;
+}
+
+/**
+ * The host the URI aims at — the first of a replica set, without the port, with
+ * the credentials skipped. Good enough to decide which advice to give a failing
+ * backup, and which database a restore would actually overwrite; `mongodump`
+ * itself is the authority on parsing the rest. Pass a URL to read a different one
+ * than the configured — a manifest's recorded `uri` is redacted, and redaction
+ * leaves the host alone.
+ */
+function databaseHost(url = config.mongoUrl) {
+  const text = String(url || '');
+  const afterAuth = text.slice(text.lastIndexOf('@') + 1).replace(/^[^:]+:\/\//, '');
+  return (afterAuth.split('/')[0].split(',')[0] || '').replace(/:\d+$/, '');
+}
+
+/**
+ * Is the database somewhere other than this machine? `mongodb+srv://` always is —
+ * Atlas hands out SRV strings and no server on a laptop answers them.
+ */
+function databaseIsRemote() {
+  const host = databaseHost();
+  return /^(localhost|127\.0\.0\.1|::1|0\.0\.0\.0|\[::1\])$/.test(host) === false;
 }
 
 /** The same URI with the password removed — the form that is safe to write down. */
@@ -75,7 +103,9 @@ function runTool(mode, toolArgs, archivePath, inputBuffer) {
   if (run.error) {
     const hint = BIN
       ? `MONGODUMP_BIN points at "${BIN}" and it did not run.`
-      : `Is the database container up? Try: docker compose up -d   (the container this looks for is "${CONTAINER}")`;
+      : databaseIsRemote()
+        ? `MONGO_URL names "${databaseHost()}", which is not a database on this machine, so there is no container here holding mongodump. Install the MongoDB Database Tools and set MONGODUMP_BIN to their mongodump/mongorestore.`
+        : `Is the database container up? Try: docker compose up -d   (the container this looks for is "${CONTAINER}")`;
     return { ok: false, message: `${run.error.message}\n  ${hint}` };
   }
   if (run.status !== 0) {
@@ -140,23 +170,6 @@ function folderPattern(dbName) {
   return new RegExp(`^\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}-\\d{3}Z-${db}(-\\d+)?$`);
 }
 
-/**
- * Copies PHOTO_DIR into the backup folder. A plain file copy rather than a tar:
- * there is no tar on a Windows laptop, and a restored photo has to land at the
- * same relative path the API reads it from.
- */
-function copyPhotos(destFolder) {
-  const files = walk(config.photoDir);
-  let bytes = 0;
-  for (const file of files) {
-    const dest = path.join(destFolder, file.rel);
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.copyFileSync(file.abs, dest);
-    bytes += file.bytes;
-  }
-  return { files: files.length, bytes };
-}
-
 function readManifest(folder) {
   const file = path.join(folder, 'manifest.json');
   if (!fs.existsSync(file)) {
@@ -170,7 +183,8 @@ module.exports = {
   CONTAINER,
   BIN,
   collectionCounts,
-  copyPhotos,
+  databaseHost,
+  databaseIsRemote,
   folderPattern,
   readManifest,
   redactedUrl,
