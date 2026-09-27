@@ -210,8 +210,8 @@ test('NFR-SCALE-1 — a college added at /staff is one the product already knows
   base = `http://127.0.0.1:${server.address().port}`;
   t.after(async () => {
     await new Promise(resolve => server.close(resolve));
-    // This run's mail and photo folders are scratch, and a verification link left in
-    // one is a live session-equivalent.
+    // This run's mail and photo folders are scratch, and a confirmation code left in
+    // one, read together with its address, is a live session.
     fs.rmSync(config.outboxDir, { recursive: true, force: true });
     fs.rmSync(config.photoDir, { recursive: true, force: true });
     // The connection is what keeps the process alive: without this the suite passes

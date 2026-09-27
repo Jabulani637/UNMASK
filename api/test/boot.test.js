@@ -156,7 +156,7 @@ test('stage 9d — the production boot gates, each one proven to fire', async t 
     assert.match(line, /WEB_ORIGIN/);
   });
 
-  await t.test('gate: no SMTP, so every verification link is written to a folder on the server', () => {
+  await t.test('gate: no SMTP, so every confirmation code is written to a folder on the server', () => {
     const line = only(loadProduction({ SMTP_HOST: '', SMTP_USER: '', SMTP_PASSWORD: '' }).problems, 'SMTP_HOST is empty', 'no smtp');
     assert.match(line, /nobody can finish registering/);
   });
@@ -282,7 +282,7 @@ test('stage 9d — the production boot gates, each one proven to fire', async t 
     assert.match(line, /\.env\.example/);
   });
 
-  await t.test('gate: an SMTP host with no credentials, which fails a verification link silently', () => {
+  await t.test('gate: an SMTP host with no credentials, which fails a confirmation code silently', () => {
     const line = only(loadProduction({ SMTP_USER: '', SMTP_PASSWORD: '' }).problems, 'SMTP_USER/SMTP_PASSWORD are not', 'smtp without credentials');
     assert.match(line, /fail silently/);
   });

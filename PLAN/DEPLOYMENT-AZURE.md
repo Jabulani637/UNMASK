@@ -107,7 +107,7 @@ destroyed, you are restoring from Blob. That is stated again in stage 13.
 |---|---|---|---|
 | 1 | An **Azure subscription** that can create a VM | A Pay-As-You-Go subscription, a Visual Studio (student) subscription, or an institution's subscription | Everything in stage 3 |
 | 2 | A **domain name you control the DNS for** | e.g. `unmask.app`, `getunmask.co.za`, or a subdomain of a college domain. You need to be able to add an A record | TLS certificates are issued to a hostname. No DNS, no HTTPS, and no login: the session cookie is marked `Secure`, so over plain http every login looks like a wrong password (`PUBLIC_APP_URL` is a boot gate) |
-| 3 | A **mail sender that gives SMTP username + password + port 587** | Recommended: **Azure Communication Services → Email**, with SMTP authentication *enabled* on the resource (this is a setting, not automatic). Any other relay works too — Brevo, Mailgun, Amazon SES, your host's relay | Registration ends in an emailed confirmation link. `SMTP_HOST` empty in production is gate **P4** and the API refuses to boot. It cannot be skipped on a server, which is deliberate |
+| 3 | A **mail sender that gives SMTP username + password + port 587** | Recommended: **Azure Communication Services → Email**, with SMTP authentication *enabled* on the resource (this is a setting, not automatic). Any other relay works too — Brevo (free for 300 a day, and what this deployment is using), Mailgun, Amazon SES, your host's relay | Registration ends in an emailed six-digit code that has to be typed back. `SMTP_HOST` empty in production is gate **P4** and the API refuses to boot. It cannot be skipped on a server, which is deliberate |
 | 4 | **SPF and DKIM** for the mail sender, published in that domain's DNS | ACS gives you two records to add after you verify the domain | Without them the confirmation emails land in spam, and a student who never sees the link never signs in — the failure looks like a broken site, not a broken mailbox |
 | 5 | **Secrets you never commit** — four, or five if the photos go in a bucket | `MONGO_PASSWORD`, `SESSION_SECRET`, the SMTP password and the SSH key are yours to generate; `R2_SECRET_ACCESS_KEY` is generated *for* you by Cloudflare when the R2 API token is created. That one, with its Access Key ID, is the whole bucket's access control — it can read, write and delete every object in it, a student's face included — so both go in `deploy\prod.env` and nowhere else, and never in the site's code, where a browser could read them | `SESSION_SECRET` signs every login cookie. A 64-hex string is generated on your laptop with: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
 
@@ -758,12 +758,13 @@ Stated here so nobody discovers them in a bad week:
    deleted when its owner deletes their account. If E2EE is a requirement, it is a design
    stage, not a config flag.
 4. **The site knows only that the mail server accepted a message.** There is no delivery
-   log, no queue and no retry: a verification link, a reset link and the
+   log, no queue and no retry: a confirmation code, a reset link and the
    "someone tried to register with your address" warning are each handed to SMTP once. A
    full mailbox, a hard bounce or a domain whose SPF was never published is invisible here,
    and it reaches you as a student saying *I never got the email*. The recovery is the
-   **Send the confirmation link again** button on the sign-in page, limited to four per
-   address per half hour, and nothing else. Password reset itself **does** ship
+   **Send another code** button on the confirmation step and the
+   **Send me the six digits again** button on the sign-in page — one new code per address
+   per minute, four per IP per half hour, and nothing else. Password reset itself **does** ship
    (`/forgot` → emailed link → new password, and every other device is signed out) — what
    does not ship is any way to know the email went nowhere.
 5. **The rate limits are per IP address.** Behind a college NAT — which is exactly what a
@@ -796,7 +797,7 @@ catch people on a first deploy:
 |---|---|---|
 | "…every login would look like a wrong password" | `PUBLIC_APP_URL` starts with `http://` | The session cookie is `Secure` |
 | "…chat is silently dead and nothing else looks broken" | `WEB_ORIGIN` (from `PUBLIC_APP_URL`) does not contain the address students type | The same list is the socket's handshake allowlist |
-| "no SMTP" | `SMTP_HOST` empty | A confirmation link that goes nowhere means nobody finishes signing up, quietly |
+| "no SMTP" | `SMTP_HOST` empty | A confirmation code that goes nowhere means nobody finishes signing up, quietly |
 | "the template database password still in place" | `MONGO_PASSWORD` left as `change-me-local-only` | It is the first thing a scanner tries |
 | "`DEV_AUTO_VERIFY` on" | that key present | A shortcut through the mailbox must not reach a server |
 | "the choices are \"disk\" … or \"r2\"" | a typo in `PHOTO_STORE` | A store that silently fell back to disk would put the pictures back on the machine that was meant to stop holding them |

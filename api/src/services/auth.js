@@ -27,9 +27,21 @@ const mail = require('./mail');
 const sessions = require('./sessions');
 const photos = require('./photos');
 const personalData = require('./personal-data');
-const { randomToken, hashToken, tokenMatches, buildLink, minutesFromNow } = require('../utils/tokens');
+const { randomToken, randomDigits, hashToken, tokenMatches, buildLink, minutesFromNow } = require('../utils/tokens');
 
-const VERIFY_TTL_MINUTES = 24 * 60;
+// Ten minutes, not the 24 hours a link used to be allowed. A link that is still
+// valid tomorrow is a link sitting in an inbox folder tomorrow; a code that a
+// person is being asked to type right now does not need to live long, and the only
+// thing that keeps a six-digit secret worth anything is a short window in which to
+// spend the five guesses.
+const VERIFY_CODE_TTL_MINUTES = 10;
+const VERIFY_CODE_DIGITS = 6;
+const MAX_VERIFY_CODE_ATTEMPTS = 5;
+// One minute between codes for the same address. The rate limiter on the route
+// counts addresses, and this counts the account: without it, one script cycling
+// through a thousand addresses spends the day's entire mail allowance.
+const RESEND_COOLDOWN_SECONDS = 60;
+
 const RESET_TTL_MINUTES = 30;
 const MAX_FAILED_LOGINS = 8;
 const LOCK_MINUTES = 15;
@@ -93,52 +105,77 @@ function assertShape({ email, password }) {
  * identical to the successful one, and deliberately not promising delivery.
  */
 const CHECK_YOUR_EMAIL =
-  'Check your inbox. If that address is one your institution gave you, a confirmation link is on its way — it expires in 24 hours.';
+  'Check your inbox. If that address is one your institution gave you, a six-digit confirmation code is on its way — it expires in 10 minutes.';
 
 /** What the same screen says when DEV_AUTO_VERIFY confirmed the address instead of
- *  mailing a link. It cannot be the sentence above, because nothing is on its way
+ *  mailing a code. It cannot be the sentence above, because nothing is on its way
  *  anywhere — and it says out loud that this box skipped a step a real server will
  *  not skip, so nobody mistakes what they just saw on their laptop for the product. */
 const DEV_AUTO_VERIFIED =
-  'DEV_AUTO_VERIFY is on: this address was confirmed without a link, so there is nothing to open in an inbox. Turn the switch off to see the real sign-up.';
+  'DEV_AUTO_VERIFY is on: this address was confirmed without a code being sent, so there is nothing to read in an inbox. Turn the switch off to see the real sign-up.';
 
 /** FR-1.4's version of the same trick: a reset link is only ever mailed to an
  *  address that already has an account, so the on-screen sentence cannot say
  *  whether one was found. */
 const RESET_SENT = 'If that address has an account, a reset link is on its way. It expires in 30 minutes.';
 
-async function issueVerificationLink(email, institution) {
-  const token = randomToken();
+async function issueVerificationCode(email, institution) {
+  // Both doors that can send this letter — signing up over a pending account, and
+  // "send me another" — go through here, so the cooldown lives here rather than in
+  // one of them. A code that is still being typed has to stay valid; replacing it
+  // because somebody pressed the button twice is how a student ends up entering the
+  // digits from the first email after the second one overwrote them.
+  const current = await User.findOne({ email }).select('+verifyCodeSentAt');
+  if (current && current.verifyCodeSentAt) {
+    const ageSeconds = (Date.now() - current.verifyCodeSentAt.getTime()) / 1000;
+    if (ageSeconds < RESEND_COOLDOWN_SECONDS) return false;
+  }
+
+  const code = randomDigits(VERIFY_CODE_DIGITS);
   await User.updateOne(
     { email },
     {
       $set: {
-        verifyTokenHash: hashToken(token),
-        verifyTokenExpiresAt: minutesFromNow(VERIFY_TTL_MINUTES),
+        verifyCodeHash: hashToken(code),
+        verifyCodeExpiresAt: minutesFromNow(VERIFY_CODE_TTL_MINUTES),
+        verifyCodeSentAt: new Date(),
+        // A fresh code means a fresh guess budget. Leaving the old count in place
+        // would let someone who mistyped four times be locked out of a code they
+        // have never been offered.
+        verifyCodeAttempts: 0,
       },
     }
   );
 
-  const link = buildLink(config.appUrl, '/verify', token);
   // Named from the document, not from this file: the person reading the mail
   // should see the institution that gave them the address, and the only honest
   // source for that sentence is the row that decided they may register.
   const where = institution ? institution.name : 'the institution that gave you this address';
 
-  return mail.send({
+  // The code is never returned to a caller. Nothing outside this letter and the
+  // hash in the database is ever supposed to hold it — not a route, not a log, not
+  // a test helper, which reads it back out of the letter the same way a student does.
+  await mail.send({
     to: email,
-    subject: institution ? `Confirm your ${institution.shortName} email — Unmask` : 'Confirm your student email — Unmask',
+    subject: institution
+      ? `Your ${institution.shortName} confirmation code — Unmask`
+      : 'Your Unmask confirmation code',
     text: [
       `Someone asked to create an Unmask account with an address at ${where}.`,
       '',
       'Unmask matches verified students on their interests and what they write, not on their photos. Your name is never collected, and nothing is shown to another student until you both agree to reveal.',
       '',
-      'Confirm it is you by opening this link within 24 hours:',
-      link,
+      'Type these six digits into the sign-up screen to confirm it is you. They stop working in 10 minutes:',
       '',
-      `If you did not ask for this, nothing happens: the address stays unregistered and you can ignore this email. The link only works once.`,
+      `    ${code}`,
+      '',
+      'Unmask will never phone, message or email you asking for this code. Anyone who asks for it is not us.',
+      '',
+      'If you did not ask for this, do nothing: the address stays unregistered and this email can be deleted. The code works once, on the sign-up screen, and only for the address it was sent to.',
     ].join('\n'),
   });
+
+  return true;
 }
 
 /**
@@ -191,15 +228,15 @@ async function register({ email, password, over18Attested }) {
   // DEV_AUTO_VERIFY, and why it is safe even here: this branch cannot hand out a
   // session, because /api/auth/register never signs anybody in and never changes an
   // existing password. Marking the address confirmed therefore lets a stranger do
-  // nothing they could not do by clicking the link in somebody else's inbox folder —
+  // nothing they could not do by reading a code out of somebody else's inbox folder —
   // they still need the password, and the password is what /api/auth/login checks.
   if (existing) {
     if (config.devAutoVerify) {
-      await User.updateOne({ _id: existing._id }, { $set: { emailVerifiedAt: new Date(), verifyTokenHash: null, verifyTokenExpiresAt: null } });
+      await User.updateOne({ _id: existing._id }, { $set: { emailVerifiedAt: new Date(), verifyCodeHash: null, verifyCodeExpiresAt: null, verifyCodeSentAt: null, verifyCodeAttempts: 0 } });
     } else {
-      // Unverified and still pending: re-send the link rather than create a second
+      // Unverified and still pending: send a fresh code rather than create a second
       // account for the same person.
-      await issueVerificationLink(normalized, institution);
+      await issueVerificationCode(normalized, institution);
     }
     return answer();
   }
@@ -223,7 +260,7 @@ async function register({ email, password, over18Attested }) {
     throw err;
   }
 
-  if (!config.devAutoVerify) await issueVerificationLink(normalized, institution);
+  if (!config.devAutoVerify) await issueVerificationCode(normalized, institution);
 
   // NFR-2.5 — a burst of accounts from one client is what a farm looks like. The
   // institution's short name is the useful aggregate; the domain would be personal
@@ -233,23 +270,57 @@ async function register({ email, password, over18Attested }) {
   return answer();
 }
 
-/** FR-1.2 — the link. One use, then the token is gone. */
-async function verifyEmailToken(token) {
-  const candidate = String(token || '');
-  if (!candidate) throw new UserError('That link is missing its token.', { status: 400 });
+/**
+ * FR-1.2 — the six digits. One use, five wrong entries, ten minutes.
+ *
+ * The email is part of this request on purpose. Looking the account up by the code's
+ * hash alone would be neater, and it would be a hole: with a million possible codes
+ * and a few hundred students registering at once, some code matches *someone*, and a
+ * stranger who is then signed in on a name they never chose has been handed that
+ * person's profile, their chats and their reveal. Asking for the address too means a
+ * match only ever belongs to the account the caller already named — which is the one
+ * they cannot reach this way without also holding its mailbox.
+ */
+const BAD_CODE =
+  'That code does not match, or it has stopped working. Check the six digits, or ask for a new one.';
 
-  // The token is looked up by its hash, so this cannot be widened by a crafted
-  // string; it either matches one row or none.
-  const user = await User.findOne(
-    { verifyTokenHash: hashToken(candidate), verifyTokenExpiresAt: { $gt: new Date() } },
-    { email: 1, emailVerifiedAt: 1, status: 1 }
-  ).select('+verifyTokenHash +verifyTokenExpiresAt');
+async function verifyEmailCode({ email, code, userAgent }) {
+  const normalized = String(email || '').trim().toLowerCase();
+  const candidate = String(code || '').trim();
 
-  if (!user || !tokenMatches(candidate, user.verifyTokenHash)) {
-    throw new UserError('That link no longer works. It has been used, or it expired after 24 hours.', {
-      status: 410,
-      code: 'bad_token',
-    });
+  // A shape mistake is not a guess: it spends no budget and gets its own sentence,
+  // because "you typed five digits" is something the person can fix themselves, and
+  // it tells nobody whether the address has an account.
+  if (!/^\d{6}$/.test(candidate)) {
+    throw new UserError('Enter the six digits from the email.', { status: 400, code: 'bad_code' });
+  }
+
+  const user = await User.findOne({ email: normalized })
+    .select('+verifyCodeHash +verifyCodeExpiresAt +verifyCodeAttempts');
+
+  const live = Boolean(user && user.verifyCodeHash && user.verifyCodeExpiresAt > new Date());
+
+  if (!live || !tokenMatches(candidate, user.verifyCodeHash)) {
+    if (live) {
+      // Counted only when there is a live code to spend, so guessing about an address
+      // that never registered cannot exhaust anything.
+      const updated = await User.findOneAndUpdate(
+        { _id: user._id },
+        { $inc: { verifyCodeAttempts: 1 } },
+        { new: true }
+      ).select('+verifyCodeAttempts');
+
+      if (updated && updated.verifyCodeAttempts >= MAX_VERIFY_CODE_ATTEMPTS) {
+        // Burned, not slowed. Five guesses at a million is a 0.0005% chance; the
+        // reason to stop there is to deny the next thousand guesses the same code.
+        // A new code is a new budget, and the student reads one sentence either way.
+        await User.updateOne({ _id: user._id }, { $set: { verifyCodeHash: null, verifyCodeExpiresAt: null } });
+      }
+    }
+
+    // One sentence for "no such account", "expired", "used up" and "wrong digits", so
+    // the only way to learn an address is registered is to hold a code sent to it.
+    throw new UserError(BAD_CODE, { status: 401, code: 'bad_code' });
   }
 
   if (user.status !== 'active') {
@@ -261,20 +332,27 @@ async function verifyEmailToken(token) {
   await User.updateOne(
     { _id: user._id },
     {
-      $set: { emailVerifiedAt: new Date(), verifyTokenHash: null, verifyTokenExpiresAt: null },
+      $set: { emailVerifiedAt: new Date(), verifyCodeHash: null, verifyCodeExpiresAt: null, verifyCodeSentAt: null, verifyCodeAttempts: 0 },
     }
   );
 
-  return { email: user.email, verified: true };
+  // They chose this password minutes ago on the sign-up screen and now hold the
+  // mailbox it was sent to, so the session is earned, not assumed. It is the same
+  // `sessions.start` a sign-in goes through — same 30-day expiry, same revocation on
+  // a password change. There is no second, weaker kind of login.
+  const session = await sessions.start(user._id, { userAgent });
+
+  return { email: user.email, session, verified: true };
 }
 
 /**
- * The confirmation link expired, so ask for another.
+ * The code expired, or never arrived, so ask for another.
  *
- * Same shape as register on purpose: this cannot say "that address has no
- * account" or "that address is already verified", because both are answers about
- * someone else's registration. A signed-out visitor learns nothing here, and the
- * owner of the address gets the link in their own inbox.
+ * Same shape as register on purpose: this cannot say "that address has no account"
+ * or "that address is already verified", because both are answers about someone
+ * else's registration. A signed-out visitor learns nothing here, and the owner of the
+ * address gets a code in their own inbox — where the one that arrived a minute ago
+ * still stands, because the cooldown will not let this overwrite it.
  */
 async function resendVerification(email) {
   const normalized = String(email || '').trim().toLowerCase();
@@ -287,7 +365,7 @@ async function resendVerification(email) {
   }
 
   const pending = await User.findOne({ email: normalized, emailVerifiedAt: null, status: 'active' });
-  if (pending) await issueVerificationLink(normalized, institution);
+  if (pending) await issueVerificationCode(normalized, institution);
 
   return CHECK_YOUR_EMAIL;
 }
@@ -354,7 +432,7 @@ async function login({ email, password, userAgent }) {
       // Their password is right, so telling them to check it would be a lie. This
       // names the actual blocker without confirming the account exists to a third
       // party, who would not know the password.
-      throw new UserError('Confirm your student email first. Use the link we sent you, or ask for another.', {
+      throw new UserError('Confirm your student email first. Type the six digits we sent you, or ask for a new code.', {
         status: 403,
         code: 'email_unverified',
       });
@@ -363,7 +441,7 @@ async function login({ email, password, userAgent }) {
     // the switch was turned on is confirmed by the person who just proved the
     // password. Without that proof this line is unreachable, so the switch never
     // weakens the one check that matters.
-    await User.updateOne({ _id: user._id }, { $set: { emailVerifiedAt: new Date(), verifyTokenHash: null, verifyTokenExpiresAt: null } });
+    await User.updateOne({ _id: user._id }, { $set: { emailVerifiedAt: new Date(), verifyCodeHash: null, verifyCodeExpiresAt: null, verifyCodeSentAt: null, verifyCodeAttempts: 0 } });
     user.emailVerifiedAt = new Date();
   }
 
@@ -579,7 +657,7 @@ module.exports = {
   assertShape,
   emailDomain,
   register,
-  verifyEmailToken,
+  verifyEmailCode,
   resendVerification,
   login,
   logout,

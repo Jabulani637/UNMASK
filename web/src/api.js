@@ -64,7 +64,7 @@ export const api = {
 
   auth: {
     register: body => request('/api/auth/register', { method: 'POST', body }),
-    verify: token => request('/api/auth/verify', { method: 'POST', body: { token } }),
+    verifyCode: ({ email, code }) => request('/api/auth/verify-code', { method: 'POST', body: { email, code } }),
     resend: email => request('/api/auth/resend-verification', { method: 'POST', body: { email } }),
     signIn: body => request('/api/auth/login', { method: 'POST', body }),
     signOut: () => request('/api/auth/logout', { method: 'POST' }),

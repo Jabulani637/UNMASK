@@ -10,9 +10,11 @@
  * Those are the FR-1.x / NFR-3.3 rules that one convenient error message breaks,
  * which is why this file compares sentences, not just status codes.
  *
- * The verification link is read out of api/outbox/, which is what a machine with
- * no SMTP sees — so the suite walks the same path a student follows from their
- * inbox, fallback included.
+ * The confirmation code is read out of api/outbox/, which is what a machine with
+ * no SMTP sees — the same way a student reads it out of an inbox. The reset link
+ * still comes out of a letter too, so both helpers are here. What the code does
+ * under attack (five wrong entries, an expired window, a second letter) is
+ * `test/verifyCode.test.js`; this file walks the lifecycle.
  */
 
 const path = require('path');
@@ -73,9 +75,17 @@ async function waitForMail(before) {
   throw new Error('nothing appeared in api/outbox/');
 }
 
+/** A link's token, read out of a letter — reset still arrives as a link. */
 function tokenFrom(mailText, route) {
   const match = mailText.match(new RegExp(`${route}\\?token=([A-Za-z0-9_-]+)`));
   assert.ok(match, `no ${route} link in the mail`);
+  return match[1];
+}
+
+/** The confirmation code, out of the one indented line the letter puts it on. */
+function codeFrom(mailText) {
+  const match = mailText.match(/^\s{4}(\d{6})\s*$/m);
+  assert.ok(match, 'no six-digit code line in the mail');
   return match[1];
 }
 
@@ -150,8 +160,9 @@ test('stage 2 — the account lifecycle', async t => {
   t.after(async () => {
     await new Promise(resolve => server.close(resolve));
     await User.deleteMany({});
-    // A written verification link is a live session-equivalent; do not leave one
-    // lying around in a folder after the run that made it.
+    // A written code is a live session-equivalent — with its address it is accepted
+    // by /api/auth/verify-code; do not leave one lying around in a folder after the
+    // run that made it.
     fs.rmSync(config.outboxDir, { recursive: true, force: true });
     await db.disconnect();
   });
@@ -195,7 +206,7 @@ test('stage 2 — the account lifecycle', async t => {
     assert.match(res.json.error, /at least 10 characters/);
   });
 
-  await t.test('register → emailed link → confirm → sign in → sign out', async () => {
+  await t.test('register → emailed code → typed in → signed in → sign out', async () => {
     const email = testEmail('full');
     const res = await register(email);
     assert.equal(res.status, 200);
@@ -211,28 +222,33 @@ test('stage 2 — the account lifecycle', async t => {
     const letter = await waitForMail(res.before);
     // NFR-SCALE-1: the wording comes off the institution document the address
     // resolved to, so another college's student is told about their own college.
-    assert.match(letter, /^Subject:\s*Confirm your CPUT email — Unmask$/m);
-    const token = tokenFrom(letter, '/verify');
-    assert.notEqual(token, user.verifyTokenHash, 'the link carries a token, not its hash');
+    assert.match(letter, /^Subject:\s*Your CPUT confirmation code — Unmask$/m);
+    const code = codeFrom(letter);
 
-    const verified = await call('POST', '/api/auth/verify', { body: { token } });
-    assert.equal(verified.status, 200);
-    assert.match(verified.json.message, /Sign in to continue/i);
-    assert.equal(cookie, '', 'FR-1.2: confirming an address is not signing in');
+    const stored = await User.findOne({ email }).select('+verifyCodeHash +verifyCodeExpiresAt +verifyCodeSentAt');
+    assert.match(stored.verifyCodeHash, /^[0-9a-f]{64}$/, 'what is stored is a digest, not the digits');
+    assert.notEqual(letter.includes(stored.verifyCodeHash), true, 'and the digest never reaches the letter');
+    assert.ok(stored.verifyCodeExpiresAt > new Date(), 'the window is open');
 
-    const after = await User.findOne({ email }).select('+verifyTokenHash +verifyTokenExpiresAt');
-    assert.ok(after.emailVerifiedAt);
-    assert.equal(after.verifyTokenHash, null, 'a used token is cleared');
-    assert.equal(after.verifyTokenExpiresAt, null);
-
-    const signInRes = await signIn(email);
-    assert.equal(signInRes.status, 200);
-    assert.equal(signInRes.json.signedIn, true);
+    const verified = await call('POST', '/api/auth/verify-code', { body: { email, code } });
+    assert.equal(verified.status, 200, verified.text);
+    assert.equal(verified.json.signedIn, true, 'FR-1.2: the code is the whole of signing in');
+    assert.equal(verified.json.email, email);
+    assert.ok(!('code' in verified.json) && !('token' in verified.json), 'the answer hands back no secret');
     assert.ok(cookie.startsWith('unmask_session='), 'the session arrives as a cookie');
     assert.match(lastSetCookie, /HttpOnly/i, 'page script must not be able to read the session');
     assert.match(lastSetCookie, /SameSite=Lax/i);
     assert.match(lastSetCookie, /Expires=/, 'a 30-day cookie, not a session-only one');
     assert.ok(cookie.split('=')[1].length >= 40, 'the cookie is a long random value, not a guessable id');
+
+    const after = await User.findOne({ email }).select(
+      '+verifyCodeHash +verifyCodeExpiresAt +verifyCodeSentAt +verifyCodeAttempts'
+    );
+    assert.ok(after.emailVerifiedAt);
+    assert.equal(after.verifyCodeHash, null, 'a used code is cleared');
+    assert.equal(after.verifyCodeExpiresAt, null);
+    assert.equal(after.verifyCodeSentAt, null);
+    assert.equal(after.verifyCodeAttempts, 0);
 
     const me = await call('GET', '/api/auth/me', { asClient: true });
     assert.equal(me.status, 200);
@@ -244,6 +260,10 @@ test('stage 2 — the account lifecycle', async t => {
     const dead = await call('GET', '/api/auth/me', { asClient: true });
     assert.equal(dead.status, 401);
     assert.equal(dead.json.code, 'unauthenticated');
+
+    // The password chosen on the sign-up screen is a real password, not a step on
+    // the way to a code: it opens the same door the next day.
+    assert.equal((await signIn(email)).status, 200);
   });
 
   await t.test('a password alone does not sign an unverified address in', async () => {
@@ -286,21 +306,37 @@ test('stage 2 — the account lifecycle', async t => {
     assert.equal(await User.countDocuments({ email }), 1, 'capitalisation is not a second identity');
   });
 
-  await t.test('a verification link works once, and a guessed one is indistinguishable', async () => {
+  await t.test('a code works once, and every refusal reads exactly the same', async () => {
     const email = testEmail('once');
     const res = await register(email);
-    const token = tokenFrom(await waitForMail(res.before), '/verify');
+    const code = codeFrom(await waitForMail(res.before));
 
-    assert.equal((await call('POST', '/api/auth/verify', { body: { token } })).status, 200);
-    const again = await call('POST', '/api/auth/verify', { body: { token } });
-    assert.equal(again.status, 410);
-    assert.equal(again.json.code, 'bad_token');
+    cookie = '';
+    assert.equal((await call('POST', '/api/auth/verify-code', { body: { email, code } })).status, 200);
 
-    const forged = await call('POST', '/api/auth/verify', {
-      body: { token: 'a'.repeat(43) },
+    const spent = await call('POST', '/api/auth/verify-code', { body: { email, code } });
+    assert.equal(spent.status, 401);
+    assert.equal(spent.json.code, 'bad_code');
+
+    const neverIssued = await call('POST', '/api/auth/verify-code', { body: { email, code: '000000' } });
+    const noAccount = await call('POST', '/api/auth/verify-code', {
+      body: { email: testEmail('ghost'), code: '123456' },
     });
-    assert.equal(forged.status, 410);
-    assert.equal(forged.json.error, again.json.error, 'a used link and a wrong link read the same');
+
+    // Three different reasons to say no, one sentence for all three. Anything finer
+    // is a way to walk a list of a university's addresses and find out which of them
+    // registered — the same rule NFR-3.3 puts on sign-in and on sign-up.
+    assert.equal(neverIssued.status, 401);
+    assert.equal(noAccount.status, 401);
+    assert.deepEqual(neverIssued.json, spent.json, 'a code never sent reads like a code already used');
+    assert.deepEqual(noAccount.json, spent.json, 'and an address with no account reads like either');
+    assert.equal(
+      spent.json.error,
+      'That code does not match, or it has stopped working. Check the six digits, or ask for a new one.'
+    );
+
+    cookie = '';
+    assert.equal((await call('GET', '/api/auth/me', { asClient: true })).status, 401, 'a refused code mints no session');
   });
 
   await t.test('eight wrong passwords locks the account for 15 minutes', async () => {

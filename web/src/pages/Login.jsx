@@ -31,7 +31,7 @@ export default function Login() {
     if (signedIn) navigate(location.state?.from || '/me', { replace: true });
   }
 
-  async function sendLinkAgain(event) {
+  async function sendCodeAgain(event) {
     event.preventDefault();
     await resend.run(() => api.auth.resend(email));
   }
@@ -69,9 +69,9 @@ export default function Login() {
       </form>
 
       {code === 'email_unverified' ? (
-        <form className="stack" onSubmit={sendLinkAgain}>
+        <form className="stack" onSubmit={sendCodeAgain}>
           <button className="btn block" type="submit" disabled={resend.busy}>
-            {resend.busy ? 'Sending…' : 'Send the confirmation link again'}
+            {resend.busy ? 'Sending…' : 'Send me the six digits again'}
           </button>
           {resend.error ? <p className="server-error" role="alert">{resend.error}</p> : null}
           {resend.result ? <p className="server-ok" role="status">{resend.result.message}</p> : null}

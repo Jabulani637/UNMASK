@@ -3,7 +3,6 @@ import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
 import { BellProvider } from './hooks/useBell.jsx';
 import Landing from './pages/Landing.jsx';
 import Signup from './pages/Signup.jsx';
-import VerifyEmail from './pages/VerifyEmail.jsx';
 import Login from './pages/Login.jsx';
 import Forgot from './pages/Forgot.jsx';
 import RequestInstitution from './pages/RequestInstitution.jsx';
@@ -68,7 +67,6 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/signup" element={<Signup />} />
-            <Route path="/verify" element={<VerifyEmail />} />
             <Route path="/login" element={<Login />} />
             <Route path="/forgot" element={<Forgot />} />
             <Route path="/request-institution" element={<RequestInstitution />} />

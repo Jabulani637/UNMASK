@@ -23,9 +23,15 @@ import { api } from '../api.js';
  * page said — so a stale link to a college staff switched off says so instead of
  * quietly promising a signup that will fail.
  *
+ * After the account is created this page shows the second half of sign-up: the six
+ * digits emailed to that address, typed back. That is the whole of FR-1.2 — the
+ * screen never sees the code before the mail does, and the API answers the same
+ * sentence whether the address is wrong or the digits are, so this page cannot be
+ * used to find out who is registered.
+ *
  * When the API answers with `devAutoVerified` — which only happens on a developer's
  * machine with DEV_AUTO_VERIFY on, and which the API refuses to start with in
- * production — there is no link to open, so the page signs the student in with the
+ * production — there is no code to type, so the page signs the student in with the
  * password they just chose and takes them to their profile. The decision lives on the
  * server; this page only obeys the code it was given.
  */
@@ -33,13 +39,15 @@ export default function Signup() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [attested, setAttested] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [stage, setStage] = useState('form');
+  const [code, setCode] = useState('');
   const [devNotice, setDevNotice] = useState(null);
   const [params] = useSearchParams();
   const { meta } = useMeta();
-  const { signIn } = useAuth();
+  const { signIn, refresh } = useAuth();
   const navigate = useNavigate();
   const { busy, error, result, run } = useAction();
+  const verify = useAction();
   const resend = useAction();
 
   const asked = params.get('institution');
@@ -51,23 +59,37 @@ export default function Signup() {
       () => api.auth.register({ email, password, over18Attested: attested }),
       value => {
         if (value.devAutoVerified) setDevNotice(value.message);
-        else setSent(true);
+        else setStage('code');
       }
     );
     if (!registered || !registered.devAutoVerified) return;
 
     const signedIn = await run(() => signIn(email, password), () => navigate('/me', { replace: true }));
-    if (!signedIn) setSent(true);
+    if (!signedIn) setStage('code');
   }
 
-  if (sent) {
+  async function confirmCode(event) {
+    event.preventDefault();
+    // No second password: /api/auth/verify-code answered with a session cookie of its
+    // own, so the honest thing here is to ask who the browser now is, not to log in
+    // again with the credentials this screen still happens to be holding.
+    await run(
+      () => api.auth.verifyCode({ email, code }),
+      async () => {
+        await refresh();
+        navigate('/me', { replace: true });
+      }
+    );
+  }
+
+  if (stage !== 'form') {
     return (
       <AppShell
-        title={devNotice ? 'Confirmed, no link needed' : `Check ${email}`}
+        title={devNotice ? 'Confirmed, no code needed' : `Confirm ${email}`}
         intro={
           devNotice
-            ? 'Nothing was emailed on this machine, so there is nothing to open.'
-            : 'The confirmation link expires in 24 hours and works once.'
+            ? 'Nothing was emailed on this machine, so there is nothing to read.'
+            : 'The six digits expire in 10 minutes and work once. Five wrong entries and a new code is needed.'
         }
       >
         {/* When the address already had an account, registering left its password
@@ -81,32 +103,52 @@ export default function Signup() {
           </p>
         ) : null}
         <p className="server-line">{devNotice || (result ? result.message : '')}</p>
-        <p className="hint">
-          {devNotice ? (
-            <>
-              Continue to <Link to="/login">sign in</Link> — or, if this address already had an account with a
-              password you do not have, <Link to="/forgot">set a new one</Link>.
-            </>
-          ) : (
-            <>
-              Open it on this device, then <Link to="/login">sign in</Link>.
-            </>
-          )}
-        </p>
-        {devNotice ? null : (
-          <form
-            className="stack"
-            onSubmit={async event => {
-              event.preventDefault();
-              await resend.run(() => api.auth.resend(email));
-            }}
-          >
-            <button className="btn block" type="submit" disabled={resend.busy}>
-              {resend.busy ? 'Sending…' : 'Send the link again'}
-            </button>
-            {resend.error ? <p className="server-error" role="alert">{resend.error}</p> : null}
-            {resend.result ? <p className="server-ok" role="status">{resend.result.message}</p> : null}
-          </form>
+        {devNotice ? (
+          <p className="hint">
+            Continue to <Link to="/login">sign in</Link> — or, if this address already had an account with a
+            password you do not have, <Link to="/forgot">set a new one</Link>.
+          </p>
+        ) : (
+          <>
+            <form className="stack" onSubmit={confirmCode}>
+              <Field
+                label="Confirmation code"
+                type="text"
+                value={code}
+                // Anything that is not a digit is dropped as it is typed, so a paste of
+                // "Your code is 481902" lands as six digits rather than as a rejected
+                // string. Leading zeros are kept: 048190 is a code.
+                onChange={value => setCode(value.replace(/\D/g, '').slice(0, 6))}
+                autoComplete="one-time-code"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="000000"
+                required
+                hint="Exactly the six digits from the email. Unmask will never ask you for this code by phone or message."
+              />
+              {verify.error ? <p className="server-error" role="alert">{verify.error}</p> : null}
+              <button className="btn pink block" type="submit" disabled={verify.busy || code.length !== 6}>
+                {verify.busy ? 'Checking…' : 'Confirm and continue'}
+              </button>
+            </form>
+            <form
+              className="stack"
+              onSubmit={async event => {
+                event.preventDefault();
+                await resend.run(() => api.auth.resend(email));
+              }}
+            >
+              <button className="btn block" type="submit" disabled={resend.busy}>
+                {resend.busy ? 'Sending…' : 'Send another code'}
+              </button>
+              {resend.error ? <p className="server-error" role="alert">{resend.error}</p> : null}
+              {resend.result ? <p className="server-ok" role="status">{resend.result.message}</p> : null}
+              <p className="hint center">
+                Nothing in the inbox? It can take a minute to arrive, and a new code only goes out a minute after
+                the last one. Or <Link to="/login">sign in</Link> if this address already had an account.
+              </p>
+            </form>
+          </>
         )}
       </AppShell>
     );

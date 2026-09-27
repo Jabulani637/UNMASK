@@ -117,7 +117,7 @@ async function main() {
         : `  site      not served by this process — set SERVE_WEB=1 after \`npm run build\`, or run the web app separately`
     );
     console.log(
-      `  email     ${config.smtp.host ? `via ${config.smtp.host}` : 'no SMTP_HOST — verification links are written to api/outbox/ instead'}`
+      `  email     ${config.smtp.host ? `via ${config.smtp.host}` : 'no SMTP_HOST — confirmation codes are written to api/outbox/ instead'}`
     );
   });
 

@@ -6,7 +6,7 @@ deploy/prod.env
 .DS_Store
 npm-debug.log*
 
-# Profile photos and verification links are personal data. Never committed.
+# Profile photos and confirmation codes are personal data. Never committed.
 # A backup folder is the whole database plus every photo, in plain files. Of all the
 # things in this repository it is the one that must never be committed.
 storage/

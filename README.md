@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Unmask
 
 An anonymity-first matching site for students. You match on interests and
@@ -46,7 +45,7 @@ this laptop.**
 | MongoDB in Docker, with a password of its own | |
 | `GET /api/health` — honest readiness, never a secret or a path | |
 | `GET /api/meta` carries the institutions, each with its own email domains and faculty list, plus years, genders, 20 interests, prompts, the five appearance lists (body type, height band, drinking, smoking, the gym) and the one identity list, the account rules, and the ceilings the profile routes enforce | |
-| Sign up with an address at an institution Unmask knows (`@mycput.ac.za` and `@cput.ac.za` today, whoever staff add next), 18+ attestation, emailed confirmation link | |
+| Sign up with an address at an institution Unmask knows (`@mycput.ac.za` and `@cput.ac.za` today, whoever staff add next), 18+ attestation, emailed six-digit confirmation code | |
 | Sign in, sign out, "who am I" — session cookies, not tokens | |
 | Eight wrong passwords lock an account for 15 minutes | |
 | Forgot password → emailed link → new password, and every old device is signed out | |
@@ -115,9 +114,9 @@ this laptop.**
 | **A backup is believed because it was restored.** `npm run backup` writes `<stamp>-<db>/` holding `archive.gz`, `photos/` and a `manifest.json` that counts every collection *before* anything is compressed and records which store the photos came from; `npm run restore --into <other-db>` reads it back, and refuses to write over the database the backup came from, to run with no `--into`, to trust a folder this tool did not write, or to restore bytes that do not match the manifest's hash. `--keep N` prunes the older folders, and photos come back by one of two flags — `--photos-into <folder>` for a disk restore, `--push-photos` for a bucket, which checks every name against what the bucket already holds *before* writing any of them. Against a container both tools stream through `docker exec`, so the archive never has to sit anywhere a password can be guessed at; a hosted database has no container here, so `MONGODUMP_BIN` points at an installed `mongodump` and the same code runs against `MONGO_URL` directly. The whole thing was run against the real 98-document database, then a student was signed in through the restored copy and the source was read back to prove it never saw that write (stage 9d, NFR-5.2) | mongorestore 100.18 exits **0** having restored **zero documents** unless `--nsInclude` names the source database: the rename flags alone match nothing, and "success" is the sound of an empty room. Found by running both spellings by hand; `restore.js` carries the flag and the sentence explaining it. The hosted half of this has been read and unit-proven against an Atlas-shaped connection string, never run against a real Atlas |
 | **`deploy\` is the shape of a real server, and was rehearsed as one**: a two-stage Dockerfile that builds the site and then throws the toolchain away, so the runtime image holds `api/` and `web/dist/` and nothing else; a production compose file that takes its `MONGO_URL` from `deploy\prod.env` and starts a database of its own only when asked — resolved both ways, one service by default and two with `--profile local-db`, the container publishing **no port** either way — while the API binds `127.0.0.1:`, so the only way in is through a proxy; named volumes for the data and for the photos, the second unused once `PHOTO_STORE=r2`; a `/api/health` healthcheck the API has to pass before the site starts; `init: true` with a 15-second grace period so a closing chat socket gets its goodbye; and Caddy and nginx configs that pass `Upgrade`, turn off `proxy_buffering` and raise the body limit to 10 MB so a live thread and a photo survive the hop — with both saying out loud to set **no** CSP and no HSTS in the proxy, because those belong to the app (stage 9d) | The rehearsal reached the API on loopback, so the TLS half of those proxy configs was written and read and never carried a byte. And none of this is *on* a server: the first real deployment will be the first time `NODE_ENV=production` meets a network |
 | | **A load test.** **NFR-1.3** (2,000 concurrent students) has never been measured — the most this build has held is one rehearsal stack and one browser. **NFR-6.1** (matching and messaging scaled independently) is not met, and that is a decision, not an oversight: the chat runs inside the API process on `ws`, which is what the file-architecture document's separate Python chat service would have bought instead. Both limits are restated under "What 9d does not do" | |
-| 238 automated tests across 19 files, with the safety guards proven to fail when the rule they guard is broken — including twelve that were checked by deliberately re-breaking them: a socket that stops answering the heartbeat, a history page that loses a line, a reveal door mutated to let a single consent through, a bell that rings for a thread already on screen, a statistics panel asked to call an empty database a 0% match rate, a **Verify student status** mutated so that it undid a suspension a report had decided, the response-header middleware taken off the front of the app, `trust proxy` set back to 1 so a forged `X-Forwarded-For` bought a fresh login budget, the export's block filter widened to `filter(block => true)` so the data file named a block made *against* its own requester — which failed two subtests, one on the redaction and one on the access/deletion tally — and the copy guard, which was proven by typing a real college's name and its two email domains into a page and watching `npm run build` fail with all three named and an exit code of 1. The eleventh re-broken one is the race line on a staff card: writing `identity: 1` into the projection in `src\services\staff.js` and onto the card made the queue subtest fail, and the service was then put back. The twelfth is a database password in an error message: `scripts\backupLib.js` was set back to interpolating the raw `MONGO_URL` into its "names no database" refusal, and the subtest failed on exactly that word — the string Atlas prints is the one most likely to trip the refusal, and its password is in it. The rest of what the appearance answers brought are **outside** guards — assertions on what a suggestion card, a report excerpt, a staff payload and the matching projection do or do not carry, including that no race word appears in any of them and that three students differing only in that line come out on the same score | |
+| 247 automated tests across 18 files, with the safety guards proven to fail when the rule they guard is broken — including thirteen that were checked by deliberately re-breaking them: a socket that stops answering the heartbeat, a history page that loses a line, a reveal door mutated to let a single consent through, a bell that rings for a thread already on screen, a statistics panel asked to call an empty database a 0% match rate, a **Verify student status** mutated so that it undid a suspension a report had decided, the response-header middleware taken off the front of the app, `trust proxy` set back to 1 so a forged `X-Forwarded-For` bought a fresh login budget, the export's block filter widened to `filter(block => true)` so the data file named a block made *against* its own requester — which failed two subtests, one on the redaction and one on the access/deletion tally — and the copy guard, which was proven by typing a real college's name and its two email domains into a page and watching `npm run build` fail with all three named and an exit code of 1. The eleventh re-broken one is the race line on a staff card: writing `identity: 1` into the projection in `src\services\staff.js` and onto the card made the queue subtest fail, and the service was then put back. The twelfth is a database password in an error message: `scripts\backupLib.js` was set back to interpolating the raw `MONGO_URL` into its "names no database" refusal, and the subtest failed on exactly that word — the string Atlas prints is the one most likely to trip the refusal, and its password is in it. The thirteenth is the one this build cannot afford to get wrong: `MAX_VERIFY_CODE_ATTEMPTS` in `src\services\auth.js` was moved from 5 to 6, and `test\verifyCode.test.js` failed the subtest "five wrong entries burn the code" because the code's digest was still in the user row after five wrong entries (`actual: 539d686d…, expected: null`) — which is a sixth guess at a six-digit code, and counting attempts is the only thing between a stranger and a million of them. The constant went back to 5 and the file reported 9/9. The rest of what the appearance answers brought are **outside** guards — assertions on what a suggestion card, a report excerpt, a staff payload and the matching projection do or do not carry, including that no race word appears in any of them and that three students differing only in that line come out on the same score | |
 
-The `/signup`, `/login`, `/forgot`, `/reset`, `/verify`, `/profile`, `/match`, `/chats`,
+The `/signup`, `/login`, `/forgot`, `/reset`, `/profile`, `/match`, `/chats`,
 `/chats/:id`, `/chats/:id/reveal`, `/me`, `/notifications`, `/account` and `/staff` screens
 all work now — the last one only for a staff account. `/privacy` and `/terms` work with no
 account and no cookie at all. `/me` shows
@@ -127,21 +126,24 @@ reveal name you chose and can leave empty — and links to the profile that sits
 ### Where the emails go while you are developing
 
 `SMTP_HOST` is empty by default, so nothing can be sent. Instead of failing quietly,
-the API writes each email to `api\outbox\` as a text file with the link in it, and the
-account stays unverified until someone opens that link. Nothing skips that on a server
+the API writes each email to `api\outbox\` as a text file with the six digits in it, and
+the account stays unverified until someone opens that file and types them into `/signup`.
+Nothing skips that on a server
 someone else uses: an unverified account cannot sign in, and if `NODE_ENV` is
-production the API refuses to start until a real `SMTP_HOST` is configured.
+production the API refuses to start until a real `SMTP_HOST` is configured — a code
+sitting in a folder on a host is worse than the link it replaced, because read together
+with its address it is accepted by `/api/auth/verify-code` and returns a session.
 
 That is the rule everywhere but on your own machine. `DEV_AUTO_VERIFY=1` in `.env`
 removes the mailbox from the sign-up: the address is confirmed the moment the account
 is created, nothing is written to `api\outbox\`, and **Create account** finishes by
-signing you in and opening `/me` — no link to find, no file to open. What it does not
+signing you in and opening `/me` — no digits to find, no file to open. What it does not
 touch is the part that matters: a wrong password is still refused, `/api/auth/register`
 still hands out no session (so typing a stranger's address buys nothing they could not
 buy by reading their inbox), an address left unconfirmed from *before* you turned the
 switch on is confirmed by the person who proves the password, and `NODE_ENV=test`
 ignores the key entirely so no suite's result depends on your `.env`. A real server
-cannot catch it: `DEV_AUTO_VERIFY` is one of the fifteen refusals above, so
+cannot catch it: `DEV_AUTO_VERIFY` is one of the eighteen refusals above, so
 `NODE_ENV=production` will not boot with it on.
 
 Proven both ways in a browser against the built site — once with the switch on, which
@@ -660,7 +662,7 @@ UNMASK\
     src\encodePhoto.js   resize and re-encode in the browser, so EXIF GPS dies here
     src\hooks\           useAction (busy/error/result), useMeta (the rules, once), useApiStatus (the band that says when the API is not answering), useBell (the unread count)
     src\components\      AppShell (the nav, which changes when you sign in), Field, SafetyActions, InstitutionsPanel (the staff screen)
-    src\pages\           Landing, Signup, VerifyEmail, Login, Forgot, Reset, Home, Profile, Match, Chats, Chat, Reveal, Notifications, Account, Staff, RequestInstitution, Privacy, Terms
+    src\pages\           Landing, Signup, Login, Forgot, Reset, Home, Profile, Match, Chats, Chat, Reveal, Notifications, Account, Staff, RequestInstitution, Privacy, Terms
     scripts\no-foreign-origins.js  the build fails if any absolute URL in it points off this origin
     scripts\no-institution-names.js  the build fails if a college's name, short name or email domain is typed into the client
 ```
@@ -1109,14 +1111,19 @@ Concretely, this is held by design:
 - **A face is never cached.** `/api/reveals/:id/photo` answers `no-store`, for the same
   reason as the owner's own copy: this is a student's picture behind a session cookie on a
   university computer, and it should not outlive the pair that agreed to it.
-- Confirmation links, reset links and session cookies are stored as SHA-256 hashes
+- Confirmation codes, reset links and session cookies are stored as SHA-256 hashes
   only. A database dump cannot confirm an address, spend a link, or forge a sign-in.
+  The code is the one secret here a person could guess, so it is not left to be
+  unguessable: a counter in the database burns a live code at five wrong entries, its
+  window closes after ten minutes, and every reason to refuse — no such account,
+  expired, spent, wrong digits — reads as the same sentence.
 - Changing a password, being suspended, or deleting an account empties that user's
   `sessions` array. Tests prove the old cookie stops working and, for deletion, that
   the address can no longer sign in at all and the photo file is gone from the disk.
-- Register, forgot-password and resend all answer with one identical sentence, and a
-  wrong address and a wrong password return byte-identical 401s. A test asserts the two
-  answers are the same, so this site cannot be used to look up who has registered.
+- Register, forgot-password, resend and verify-code all answer with one identical
+  sentence, and a wrong address and a wrong password return byte-identical 401s. Tests
+  assert the answers are the same, so this site cannot be used to look up who has
+  registered.
 
 ---
 
@@ -1124,7 +1131,3 @@ Concretely, this is held by design:
 
 `4100` the API · `5273` the site · `27017` MongoDB, bound to `127.0.0.1` so it is
 reachable only from this machine. Nothing here listens on `3000` or `3020`.
-=======
-# UNMASK
-mating application. finding a companion 
->>>>>>> 440ab3f666693404ebe9865df601730594d1793b

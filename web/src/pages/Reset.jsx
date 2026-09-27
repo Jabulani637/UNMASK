@@ -9,9 +9,9 @@ import { api } from '../api.js';
 /**
  * FR-1.4 — the reset link's destination.
  *
- * As on /verify, the token is read from the URL and never displayed: until it is
- * spent it is the only thing standing between whoever finds that email and a new
- * password on someone else's account.
+ * The token is read from the URL and never displayed, and it is never written
+ * anywhere the browser keeps: until it is spent it is the only thing standing
+ * between whoever finds that email and a new password on someone else's account.
  */
 export default function Reset() {
   const [params] = useSearchParams();

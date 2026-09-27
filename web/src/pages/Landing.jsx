@@ -323,8 +323,8 @@ export default function Landing() {
               Start talking.
             </h2>
             <p className="hero-note">
-              Registration is live in this build. Until a mail server is connected, verification
-              links land in a folder on the server instead of your inbox.
+              Registration is live in this build. Until a mail server is connected, the six-digit
+              confirmation codes land in a folder on the server instead of your inbox.
             </p>
             <Link className="btn" to="/signup">
               Create my profile →

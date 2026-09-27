@@ -4,13 +4,15 @@
  *
  * Without SMTP_HOST the message is written to `api/outbox/` instead. That is not
  * a bypass: the account still has no `emailVerifiedAt`, and no route marks it
- * verified on its own. The only way to activate it is to open that file from the
- * developer's own machine and visit the link inside, which is exactly what the
- * student would have done in their inbox.
+ * verified on its own. The only way to activate it is to open that file on the
+ * developer's own machine and type the six digits inside into the sign-up screen,
+ * which is what the student would have done from their inbox.
  *
- * In production the fallback is refused, because a verification link sitting in
- * a folder on a server is a way for anyone who can read that folder to confirm an
- * address. NFR-3.1 (POPIA) does not survive that.
+ * In production the fallback is refused, because a confirmation code sitting in a
+ * folder on a server is worse than the link it replaced: read together with the
+ * address, the digits are accepted by /api/auth/verify-code and return a session.
+ * Anyone who can list that folder could then confirm any pending address.
+ * NFR-3.1 (POPIA) does not survive that.
  */
 
 const fs = require('fs');
@@ -47,7 +49,7 @@ async function send({ to, subject, text, html }) {
   }
 
   if (config.nodeEnv === 'production') {
-    throw new Error('SMTP is not configured, and refusing to write a verification link to disk in production.');
+    throw new Error('SMTP is not configured, and refusing to write a confirmation code to disk in production.');
   }
 
   fs.mkdirSync(OUTBOX_DIR, { recursive: true });

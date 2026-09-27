@@ -401,7 +401,7 @@ test('stage 9b — the right of access, and the deletion it has to agree with', 
     assert.equal(text.includes(world.a.id), false, "the file carried the requester's own id");
 
     // Nothing that is a credential, in any form.
-    for (const forbidden of ['passwordHash', 'idHash', 'verifyTokenHash', 'resetTokenHash', '$2a$', 'fileName']) {
+    for (const forbidden of ['passwordHash', 'idHash', 'verifyCodeHash', 'verifyCodeAttempts', 'resetTokenHash', '$2a$', 'fileName']) {
       assert.equal(text.includes(forbidden), false, `the file carried "${forbidden}"`);
     }
     assert.equal(text.includes(world.fileName), false, 'the file carried the stored photo filename');

@@ -6,9 +6,11 @@
  * the product:
  *   - no name field of any kind. FR-1.4 forbids collecting one at signup and
  *     FR-2.6 forbids displaying one, so there is nothing here to leak.
- *   - no token stored in plaintext. Email links and session cookies are random
- *     256-bit values; only their SHA-256 lives here, so a database dump cannot
- *     confirm anyone's address or sign in as them.
+ *   - no secret stored in plaintext. Session cookies and the reset link are random
+ *     256-bit values and the emailed confirmation code is hashed the same way, so a
+ *     dump of this collection cannot sign in as anyone, reset anyone's password, or
+ *     confirm anyone's address. The code is short enough to be guessed, which is why
+ *     what protects it is the attempt counter beside it and not its length.
  *
  * The email is still personal data under POPIA (NFR-3.1): it is the one thing
  * that identifies this account to the world, which is why deletion has to reach
@@ -37,9 +39,22 @@ const userSchema = new mongoose.Schema(
     // age is never displayed to another user before a reveal.
     over18AttestedAt: { type: Date, default: null },
 
+    // FR-1.2 — the six digits emailed to prove the address. Hashed like every other
+    // secret here, and cleared the moment they are used.
+    //
+    // `verifyCodeAttempts` is the field this design rests on. A 256-bit link token is
+    // safe because nobody can guess it; a six-digit code is not, so its safety has to
+    // come from somewhere else — the count is raised in the database on every wrong
+    // entry and the code is burned at five, which is the only thing standing between
+    // a stranger and a million possible codes. `verifyCodeSentAt` is the other half:
+    // without it, one address could ask for a new code in a loop and spend the mail
+    // quota of the whole institution.
+    verifyCodeHash: { type: String, default: null, select: false },
+    verifyCodeExpiresAt: { type: Date, default: null, select: false },
+    verifyCodeSentAt: { type: Date, default: null, select: false },
+    verifyCodeAttempts: { type: Number, default: 0, select: false },
+
     // One-shot link tokens. Hashed, and cleared the moment they are used.
-    verifyTokenHash: { type: String, default: null, select: false },
-    verifyTokenExpiresAt: { type: Date, default: null, select: false },
     resetTokenHash: { type: String, default: null, select: false },
     resetTokenExpiresAt: { type: Date, default: null, select: false },
 

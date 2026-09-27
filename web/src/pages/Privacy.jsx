@@ -158,7 +158,7 @@ export default function Privacy() {
           <p>
             Honest note about this build: while no mail server is configured, those emails are written to a folder on
             the server instead of being sent. Nothing is delivered to an inbox, and an account stays unverified until
-            somebody with access to that folder opens the link.
+            somebody with access to that folder reads the six digits out of it and types them into the sign-up screen.
           </p>
         </Section>
 

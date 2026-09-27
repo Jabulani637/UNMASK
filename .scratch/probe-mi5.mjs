@@ -52,9 +52,9 @@ async function signUp(email, who) {
   ok(`register ${email}`, reg.status === 200, `status ${reg.status} ${reg.data && reg.data.error || ''}`);
   if (reg.status !== 200) return null;
   const mail = newestOutbox(start);
-  const token = (mail.match(/token=([A-Za-z0-9_-]{20,})/) || [])[1];
-  const ver = await call('/api/auth/verify', { method: 'POST', body: { token }, who });
-  ok(`verify ${email}`, ver.status === 200, `status ${ver.status}`);
+  const code = (mail.match(/^\s{4}(\d{6})\s*$/m) || [])[1];
+  const ver = await call('/api/auth/verify-code', { method: 'POST', body: { email, code }, who });
+  ok(`confirm ${email} with ${code}`, ver.status === 200 && ver.data && ver.data.signedIn === true, `status ${ver.status}`);
   const login = await call('/api/auth/login', { method: 'POST', body: { email, password: PASSWORD }, who });
   ok(`sign in ${email}`, login.status === 200, `status ${login.status}`);
   return login.status === 200;

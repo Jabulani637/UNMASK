@@ -135,7 +135,7 @@ the site into `web\dist`, which is what lets the API serve it. Without that seco
 | `TRUST_PROXY_HOPS` | `1` | Render terminates TLS; with `0` every student arrives as one address and one person's wrong passwords lock out the whole campus |
 | `PHOTO_STORE` | `r2` | an image rebuild wipes everything inside the container, photos included. A typo here is refused at boot rather than guessed at |
 | `R2_ACCOUNT_ID` (or `R2_ENDPOINT`) `R2_BUCKET` `R2_ACCESS_KEY_ID` `R2_SECRET_ACCESS_KEY` | from §3 — `R2_ACCOUNT_ID` alone builds the endpoint; `R2_ENDPOINT` is the form to use if the bucket has a jurisdiction in its address | asked for whenever `PHOTO_STORE=r2`, in any environment — and an `http://` endpoint is refused on its own, because every photo request signs its secret into that line |
-| `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASSWORD` `MAIL_FROM` | a real mail sender | in production a confirmation link written to `api/outbox` is a link no student will ever read, so nobody finishes registering |
+| `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASSWORD` `MAIL_FROM` | Brevo free tier (300 a day, no card): `smtp-relay.brevo.com` · `587` · the address you verified as a sender · the **32-character SMTP key** from its *SMTP & API* page, not your login password · that same address | in production a confirmation code written to `api/outbox` is a code no student will ever read, so nobody finishes registering — and a folder on a public host that holds live codes is a worse place to keep them |
 
 `SERVE_WEB` needs no entry: with no value the API serves the build if there is one.
 `NODE_ENV=production` is set by Render itself, which is what switches the gates on.

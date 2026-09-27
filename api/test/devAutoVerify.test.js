@@ -140,11 +140,14 @@ test('DEV_AUTO_VERIFY — a no-link sign-up that still checks the password', asy
     assert.equal(res.json.devAutoVerified, true);
     assert.deepEqual(res.wrote, [], 'the outbox folder stays empty — that was the friction being removed');
 
-    const user = await User.findOne({ email }).select('+verifyTokenHash +verifyTokenExpiresAt');
+    const user = await User.findOne({ email }).select(
+      '+verifyCodeHash +verifyCodeExpiresAt +verifyCodeSentAt +verifyCodeAttempts'
+    );
     assert.ok(user, 'the account exists');
     assert.ok(user.emailVerifiedAt, 'and it is confirmed at the moment it is created');
-    assert.equal(user.verifyTokenHash, null, 'there is no link waiting to be clicked');
-    assert.equal(user.verifyTokenExpiresAt, null);
+    assert.equal(user.verifyCodeHash, null, 'there is no code waiting to be typed');
+    assert.equal(user.verifyCodeExpiresAt, null);
+    assert.equal(user.verifyCodeSentAt, null);
   });
 
   await t.test('registration still hands out no session, confirmed address or not', async () => {
@@ -192,7 +195,7 @@ test('DEV_AUTO_VERIFY — a no-link sign-up that still checks the password', asy
     await withSwitchOff(async () => {
       const res = await register(email);
       assert.equal(res.json.devAutoVerified, undefined, 'off means off: the ordinary answer');
-      assert.equal(res.wrote.length, 1, 'and the ordinary link, written to the ordinary folder');
+      assert.equal(res.wrote.length, 1, 'and the ordinary code, written to the ordinary folder');
     });
     assert.equal((await User.findOne({ email })).emailVerifiedAt, null);
 

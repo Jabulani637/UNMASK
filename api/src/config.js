@@ -87,7 +87,7 @@ const config = {
     maxAgeMs: 30 * 24 * 60 * 60 * 1000,
   },
 
-  // A developer's machine has no mail server, so the confirmation link is written
+  // A developer's machine has no mail server, so the confirmation code is written
   // to api/outbox and reading it is the friction. This switch removes that step:
   // registering marks the address confirmed straight away, and signing in with a
   // correct password confirms an address that is still pending. It is off unless
@@ -207,7 +207,7 @@ function productionProblems() {
   }
 
   if (!config.smtp.host) {
-    problems.push('SMTP_HOST is empty — in production a verification link is written to api/outbox on this server, where no student will ever read it, so nobody can finish registering. Set SMTP_HOST/SMTP_USER/SMTP_PASSWORD, or start the API with NODE_ENV=development while you test.');
+    problems.push('SMTP_HOST is empty — in production a confirmation code is written to api/outbox on this server, where no student will ever read it, so nobody can finish registering. Set SMTP_HOST/SMTP_USER/SMTP_PASSWORD, or start the API with NODE_ENV=development while you test.');
   }
 
   if (/change-me/i.test(config.mongoUrl)) {

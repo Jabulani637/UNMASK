@@ -269,8 +269,12 @@ async function main() {
           sessions: [],
         },
         $unset: {
-          verifyTokenHash: '',
-          verifyTokenExpiresAt: '',
+          // Demo accounts are confirmed by the `emailVerifiedAt` above, so nothing
+          // from a previous run's confirmation code is left to be typed in.
+          verifyCodeHash: '',
+          verifyCodeExpiresAt: '',
+          verifyCodeSentAt: '',
+          verifyCodeAttempts: '',
           resetTokenHash: '',
           resetTokenExpiresAt: '',
           lockedUntil: '',

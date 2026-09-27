@@ -42,22 +42,44 @@ router.post(
   }
 );
 
+/**
+ * FR-1.2 — the six digits from the email, typed into the sign-up screen.
+ *
+ * Ten guesses per address per quarter hour, the same budget as a sign-in: the real
+ * ceiling is the five wrong entries the service burns a code at, and this is the
+ * outer one that stops a script working through a thousand addresses instead.
+ *
+ * This is the only door in the API that trades a code for a session, and the reason
+ * it may: the password was chosen by the same person, in the same browser, minutes
+ * earlier, and the code proves the mailbox. A guessed code gets nothing here that a
+ * guessed password does not get at /login — except that it also has to be aimed at
+ * the address it was sent to.
+ */
 router.post(
-  '/verify',
-  perIp('verify', 20, 15 * 60 * 1000),
+  '/verify-code',
+  perIp('verify-code', 10, 15 * 60 * 1000),
   async (req, res, next) => {
     try {
-      await auth.verifyEmailToken(req.body.token);
-      // The address is now proven, but that is not a login: no session cookie is
-      // set here, so an attacker who guesses a link cannot inherit a session.
-      res.json({ message: 'Your email is confirmed. Sign in to continue.' });
+      const result = await auth.verifyEmailCode({
+        email: req.body.email,
+        code: req.body.code,
+        userAgent: req.get('user-agent') || '',
+      });
+
+      res.cookie(sessions.cookieName, result.session.id, sessions.cookieOptions());
+      res.json({
+        signedIn: true,
+        verified: true,
+        email: result.email,
+        expiresAt: result.session.expiresAt,
+      });
     } catch (err) {
       next(err);
     }
   }
 );
 
-/** FR-7.4's sibling: the link expired, so ask for another. Rate limited for the
+/** FR-7.4's sibling: the code expired, so ask for another. Rate limited for the
  *  same reason register is — it sends mail. */
 router.post(
   '/resend-verification',
