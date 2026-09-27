@@ -1,0 +1,2090 @@
+/* Unmask — design tokens and landing styles.
+   Transcribed from PLAN/DESIGN/unmask-v2.html so the built site is the approved
+   design rather than a re-reading of it. App-flow styles arrive with the
+   screens they belong to. */
+
+:root {
+  --ink: #121212;
+  --paper: #ffffff;
+  --paper-2: #f7f5ef;
+  /* --pink is the brand colour and does the drawing: borders, dots, blobs,
+     accent-colour. It carries no text. White on it is 3.42:1, and it as text on
+     white is the same 3.42:1, so no arrangement of it reaches AA for body copy. */
+  --pink: #ff3d6e;
+  /* The pink a fill uses when text has to sit on it. Same value in both schemes,
+     because white on it is 6.58:1 either way and a flipping background would move
+     the text it is holding still. */
+  --pink-deep: #b81043;
+  /* The brand colour as text, on the page: deep in the light scheme, lightened to
+     #ff6b90 in the dark one (6.58:1 and 6.74:1 on their pages). */
+  --pink-text: #b81043;
+  --on-pink: #ffffff;
+  --blue: #2b4cff;
+  /* The same split as --pink-text: the brand blue as text is 5.87:1 on white and
+     2.81:1 on a dark card, so the dark scheme gets a lighter one. */
+  --blue-text: #2b4cff;
+  --on-blue: #ffffff;
+  /* The keyboard ring. It is drawn outside the control, so the colour it has to
+     beat is the control's container, not the control: SC 1.4.11 asks 3:1 of a
+     state indicator, and --blue against the dark scheme's card measured 2.81:1.
+     --blue-text is that blue, lightened where the page is dark. */
+  --ring: var(--blue-text);
+  /* A band painted --ink flips with the scheme while --ring does not, so the ring
+     inside one has to be the other scheme's blue: #7d92ff on near-black is 6.62:1
+     and #2b4cff on near-white is 5.25:1, each in the scheme where it applies. */
+  --ring-on-ink: #7d92ff;
+  --yellow: #f5d949;
+  /* Fixed dark, not --ink: --ink is near-white in dark mode, and near-white on
+     this yellow measures 1.26:1. */
+  --on-yellow: #121212;
+  /* Also fixed, also because the yellow never flips: this is the light scheme's
+     --text-dim, so a timestamp on your own bubble looks the same in either scheme
+     instead of turning into near-white on yellow (measured 1.48:1). */
+  --on-yellow-dim: #55524b;
+  --text: var(--ink);
+  --text-dim: #55524b;
+  --border: var(--ink);
+  /* For the surfaces that paint themselves --ink and hold text on top. --paper
+     already flips alongside --ink, so it needs no twin; these two do, because
+     #948e7f on a near-white "ink" is 2.92:1. */
+  --on-ink-dim: #948e7f;
+  --on-ink-accent: #f5d949;
+  --font-display: "Anton", "Arial Narrow", sans-serif;
+  --font-body: "Space Grotesk", -apple-system, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink: #f5f2ea;
+    --paper: #161513;
+    --paper-2: #201f1b;
+    --pink-text: #ff6b90;
+    --blue-text: #7d92ff;
+    --ring-on-ink: #2b4cff;
+    --text: #f5f2ea;
+    --text-dim: #b9b3a4;
+    --border: #f5f2ea;
+    --on-ink-dim: #5b574f;
+    --on-ink-accent: #6b5900;
+  }
+}
+
+:root[data-theme="dark"] {
+  --ink: #f5f2ea;
+  --paper: #161513;
+  --paper-2: #201f1b;
+  --pink-text: #ff6b90;
+  --blue-text: #7d92ff;
+  --ring-on-ink: #2b4cff;
+  --text: #f5f2ea;
+  --text-dim: #b9b3a4;
+  --border: #f5f2ea;
+  --on-ink-dim: #5b574f;
+  --on-ink-accent: #6b5900;
+}
+
+:root[data-theme="light"] {
+  --ink: #121212;
+  --paper: #ffffff;
+  --paper-2: #f7f5ef;
+  --pink-text: #b81043;
+  --blue-text: #2b4cff;
+  --text: #121212;
+  --text-dim: #55524b;
+  --border: #121212;
+  --on-ink-dim: #948e7f;
+  --on-ink-accent: #f5d949;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-padding-top: calc(env(safe-area-inset-top, 0px) + 70px);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: var(--paper);
+  color: var(--text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+a {
+  color: inherit;
+}
+
+img {
+  max-width: 100%;
+}
+
+.wrap {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* ---------- Keyboard focus: always visible, never removed ---------- */
+/* var(--ring), which is --blue-text: the ring is a state indicator, so SC 1.4.11
+   wants 3:1 against the surface it is drawn on, and --blue on the dark scheme's
+   card measures 2.81:1. A surface that paints itself a fixed colour re-declares
+   --ring for the controls inside it — see .footer-cta and .reveal-prompt. */
+:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 3px;
+}
+
+/* ---------- Skiplink (NFR-4.3) ---------- */
+.skiplink {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  background: var(--yellow);
+  color: var(--on-yellow);
+  border: 3px solid var(--border);
+  border-radius: 0 0 12px 0;
+  padding: 12px 18px;
+  font-weight: 700;
+}
+.skiplink:focus {
+  left: 0;
+}
+
+/* ---------- Sticker tag ---------- */
+.sticker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 12.5px;
+  letter-spacing: 0.02em;
+  padding: 7px 14px;
+  border: 2.5px solid var(--border);
+  border-radius: 999px;
+  background: var(--paper);
+  white-space: nowrap;
+}
+
+/* ---------- Buttons ---------- */
+.btn {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 14px;
+  border: 3px solid var(--border);
+  background: var(--yellow);
+  color: var(--on-yellow);
+  padding: 10px 20px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-decoration: none;
+  box-shadow: 4px 4px 0 var(--border);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.btn:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 var(--border);
+}
+.btn:active {
+  transform: translate(1px, 1px);
+  box-shadow: 2px 2px 0 var(--border);
+}
+.btn.blue {
+  background: var(--blue);
+  color: var(--on-blue);
+}
+.btn.pink {
+  background: var(--pink-deep);
+  color: var(--on-pink);
+}
+.btn.ghost {
+  background: var(--paper);
+  /* Not inherited from .btn: --on-yellow is fixed dark, and the dark scheme's
+     paper is also dark, which would paint 1.03:1 text. */
+  color: var(--text);
+  box-shadow: none;
+}
+.btn.block {
+  width: 100%;
+}
+.btn.small {
+  padding: 8px 16px;
+  font-size: 13px;
+  box-shadow: 3px 3px 0 var(--border);
+}
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ---------- Nav ---------- */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: var(--paper);
+  border-bottom: 3px solid var(--border);
+}
+.nav-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  max-width: 1080px;
+  margin: 0 auto;
+}
+.wordmark {
+  font-family: var(--font-display);
+  font-size: 24px;
+  letter-spacing: 0.01em;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  text-decoration: none;
+}
+.wordmark .dot {
+  color: var(--pink-text);
+}
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+}
+.nav-links a {
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+}
+
+/* ---------- Hero ---------- */
+.hero {
+  padding: 64px 0 60px;
+  background: var(--paper-2);
+  border-bottom: 3px solid var(--border);
+  overflow: hidden;
+}
+.hero-inner {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 40px;
+  align-items: center;
+}
+.hero-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-bottom: 22px;
+}
+.hero-tags .sticker:nth-child(1) {
+  transform: rotate(-3deg);
+  background: var(--yellow);
+  color: var(--on-yellow);
+}
+.hero-tags .sticker:nth-child(2) {
+  transform: rotate(2deg);
+  background: var(--paper);
+}
+.hero-tags .sticker:nth-child(3) {
+  transform: rotate(-1deg);
+  background: var(--pink-deep);
+  color: var(--on-pink);
+}
+h1.display {
+  font-family: var(--font-display);
+  font-size: 58px;
+  line-height: 0.98;
+  letter-spacing: 0.005em;
+  margin: 0 0 20px;
+  text-transform: uppercase;
+}
+h1.display .hl {
+  color: var(--pink-text);
+}
+h1.display .hl2 {
+  color: var(--blue-text);
+}
+.hero-sub {
+  font-size: 17px;
+  line-height: 1.55;
+  color: var(--text-dim);
+  max-width: 46ch;
+  margin: 0 0 28px;
+}
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.hero-note {
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.hero-note a {
+  font-weight: 700;
+}
+/* The hero's institution picker is a `.field` sitting in a headline column, so it
+   takes the width of the sentence above it rather than a form's full width. */
+.hero-pick {
+  max-width: 460px;
+  margin: 0 0 20px;
+}
+
+.hero-art {
+  position: relative;
+  height: 380px;
+}
+.art-card {
+  position: absolute;
+  border: 3px solid var(--border);
+  border-radius: 18px;
+  background: var(--paper);
+  padding: 18px;
+  box-shadow: 6px 6px 0 var(--border);
+}
+.art-card.one {
+  top: 10px;
+  left: 20px;
+  width: 210px;
+  transform: rotate(-6deg);
+  background: var(--blue);
+  color: var(--on-blue);
+}
+.art-card.two {
+  top: 130px;
+  right: 0;
+  width: 200px;
+  transform: rotate(4deg);
+  background: var(--paper);
+}
+.art-card.three {
+  bottom: 0;
+  left: 60px;
+  width: 190px;
+  transform: rotate(-2deg);
+  background: var(--yellow);
+  color: var(--on-yellow);
+}
+.art-card b {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 20px;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.art-card span {
+  font-size: 12.5px;
+  line-height: 1.4;
+  display: block;
+}
+.art-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--ink);
+  margin-bottom: 10px;
+  filter: blur(4px);
+  opacity: 0.5;
+}
+
+/* ---------- Sections ---------- */
+.section {
+  padding: 64px 0;
+  border-bottom: 3px solid var(--border);
+}
+.section.no-border {
+  border-bottom: none;
+}
+.section-head {
+  max-width: 60ch;
+  margin-bottom: 40px;
+}
+h2.section-title {
+  font-family: var(--font-display);
+  font-size: 36px;
+  text-transform: uppercase;
+  margin: 0 0 10px;
+  line-height: 1.02;
+}
+/*
+ * The same heading at the size a form can carry. A 36px display line in the middle
+ * of a profile builder shouts over the fields under it, and the suffix is a
+ * sentence about the block ("every line optional"), which wants the body face and
+ * the dim colour, not the poster type above it.
+ */
+h2.form-section {
+  font-size: 22px;
+  margin: 6px 0 8px;
+}
+h2.form-section .section-sub {
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-dim);
+}
+p.section-sub {
+  font-size: 15.5px;
+  color: var(--text-dim);
+  line-height: 1.55;
+  margin: 0;
+}
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+.step-card {
+  border: 3px solid var(--border);
+  border-radius: 16px;
+  padding: 22px;
+  background: var(--paper);
+}
+.step-card:nth-child(1) {
+  background: var(--yellow);
+  color: var(--on-yellow);
+}
+.step-card:nth-child(3) {
+  background: var(--pink-deep);
+  color: var(--on-pink);
+}
+.step-num {
+  font-family: var(--font-display);
+  font-size: 44px;
+  line-height: 1;
+  margin-bottom: 14px;
+}
+.step-card h3 {
+  font-size: 16px;
+  margin: 0 0 8px;
+}
+.step-card p {
+  font-size: 13.5px;
+  line-height: 1.5;
+  margin: 0;
+  opacity: 0.92;
+}
+
+/* ---------- Compare ---------- */
+.compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+.compare-col {
+  border: 3px solid var(--border);
+  border-radius: 16px;
+  padding: 22px;
+}
+.compare-col.bad {
+  background: var(--paper-2);
+}
+.compare-col.good {
+  background: var(--blue);
+  color: var(--on-blue);
+}
+.compare-col h3 {
+  font-family: var(--font-display);
+  font-size: 20px;
+  text-transform: uppercase;
+  margin: 0 0 14px;
+}
+.compare-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.compare-list li {
+  font-size: 14px;
+  display: flex;
+  gap: 10px;
+  line-height: 1.4;
+}
+.compare-list .mark {
+  flex-shrink: 0;
+  font-weight: 700;
+}
+
+/* ---------- FAQ ---------- */
+/* Real <details>/<summary>, so it opens with the keyboard and a screen reader
+   announces it expanded — the prototype's div-with-onclick did neither. */
+.faq-item {
+  border: 3px solid var(--border);
+  border-radius: 14px;
+  margin-bottom: 14px;
+  background: var(--paper);
+}
+.faq-item summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 20px;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 15px;
+  list-style: none;
+}
+.faq-item summary::-webkit-details-marker {
+  display: none;
+}
+.faq-item summary .plus {
+  font-family: var(--font-display);
+  font-size: 20px;
+  transition: transform 0.2s ease;
+}
+.faq-item[open] summary .plus {
+  transform: rotate(45deg);
+}
+.faq-item p {
+  padding: 0 20px 18px;
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--text-dim);
+  line-height: 1.55;
+}
+
+/* ---------- Footer ---------- */
+.footer-cta {
+  text-align: center;
+  padding: 70px 0;
+  background: var(--ink);
+  color: var(--paper);
+  /* A band that flips while the ring does not: see --ring-on-ink. */
+  --ring: var(--ring-on-ink);
+}
+.footer-cta h2 {
+  font-family: var(--font-display);
+  font-size: 44px;
+  text-transform: uppercase;
+  margin: 0 0 20px;
+  line-height: 1;
+}
+/* The same class on a different surface: --text-dim is built for paper, and on the
+   ink band it measures 2.4:1. */
+.footer-cta .hero-note {
+  color: var(--on-ink-dim);
+}
+.footer-cta .btn {
+  background: var(--yellow);
+  color: var(--on-yellow);
+  border-color: var(--paper);
+  box-shadow: 4px 4px 0 var(--paper);
+}
+.footer-cta .btn:hover {
+  box-shadow: 6px 6px 0 var(--paper);
+}
+.footer {
+  padding: 26px 0 40px;
+  text-align: center;
+  font-size: 12.5px;
+  background: var(--ink);
+  color: var(--on-ink-dim);
+  /* Same flipping band as .footer-cta above. */
+  --ring: var(--ring-on-ink);
+}
+
+/* ---------- API status strip ---------- */
+.status-strip {
+  border-top: 3px solid var(--border);
+  background: var(--paper);
+  padding: 12px 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.status-strip .wrap {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--text-dim);
+  flex-shrink: 0;
+}
+.status-dot.ok {
+  background: var(--blue);
+}
+.status-dot.down {
+  background: var(--pink);
+}
+
+/* ---------- Account screens ---------- */
+.auth-page {
+  padding: 48px 0 64px;
+  background: var(--paper-2);
+  min-height: calc(100vh - 70px);
+}
+.auth-head {
+  max-width: 62ch;
+  margin-bottom: 26px;
+}
+.auth-head h1.display {
+  font-size: 40px;
+  margin-bottom: 12px;
+}
+.auth-card {
+  max-width: 460px;
+  border: 3px solid var(--border);
+  border-radius: 18px;
+  background: var(--paper);
+  padding: 26px;
+  box-shadow: 6px 6px 0 var(--border);
+}
+.auth-card.wide {
+  max-width: 560px;
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.field label {
+  font-weight: 700;
+  font-size: 13.5px;
+  letter-spacing: 0.01em;
+}
+.field .req {
+  color: var(--pink-text);
+}
+.field input {
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--text);
+  background: var(--paper);
+  border: 3px solid var(--border);
+  border-radius: 12px;
+  padding: 11px 13px;
+  width: 100%;
+}
+.field input::placeholder {
+  color: var(--text-dim);
+  opacity: 0.75;
+}
+.field input[aria-invalid='true'] {
+  border-color: var(--pink);
+}
+.hint {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-dim);
+  margin: 0;
+}
+.hint.center {
+  text-align: center;
+}
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  font-weight: 600;
+  cursor: pointer;
+}
+.check input {
+  width: 20px;
+  height: 20px;
+  margin: 1px 0 0;
+  accent-color: var(--pink);
+  flex-shrink: 0;
+}
+
+/* Server wording, kept distinguishable from the page's own copy. */
+.server-line {
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0;
+}
+.server-ok,
+.server-error {
+  font-size: 13.5px;
+  line-height: 1.5;
+  margin: 0;
+  padding: 11px 13px;
+  border-radius: 12px;
+  border: 2.5px solid var(--border);
+}
+.server-ok {
+  background: var(--blue);
+  color: var(--on-blue);
+}
+.server-error {
+  background: var(--pink-deep);
+  color: var(--on-pink);
+}
+
+.card-title {
+  font-family: var(--font-display);
+  font-size: 20px;
+  text-transform: uppercase;
+  margin: 0;
+}
+.rule {
+  border: none;
+  border-top: 3px dashed var(--border);
+  margin: 30px 0;
+}
+.facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 18px;
+  margin: 0 0 22px;
+  font-size: 13.5px;
+}
+.facts dt {
+  font-weight: 700;
+  color: var(--text-dim);
+}
+.facts dd {
+  margin: 0;
+  word-break: break-word;
+}
+.danger .card-title {
+  color: var(--pink-text);
+}
+
+/* ---- profile builder ---- */
+.row2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.row-gap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+.field .field-label {
+  font-weight: 700;
+  font-size: 13.5px;
+  letter-spacing: 0.01em;
+}
+.field .field-label .hint {
+  display: inline;
+  font-weight: 600;
+}
+.field select,
+.field textarea {
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--text);
+  background: var(--paper);
+  border: 3px solid var(--border);
+  border-radius: 12px;
+  padding: 11px 13px;
+  width: 100%;
+}
+.field select {
+  /* The default arrow is drawn in the control's own colours, which go invisible
+     against a 3px ink border in dark mode. */
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text) 50%),
+    linear-gradient(135deg, var(--text) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 19px, calc(100% - 13px) 19px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 36px;
+}
+.field textarea {
+  resize: vertical;
+  min-height: 78px;
+}
+.field select:focus-visible,
+.field textarea:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+.chip {
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text);
+  background: var(--paper);
+  border: 2.5px solid var(--border);
+  border-radius: 999px;
+  padding: 9px 14px;
+  cursor: pointer;
+}
+.chip:hover {
+  border-color: var(--pink);
+}
+.chip.on {
+  background: var(--pink-deep);
+  border-color: var(--border);
+  color: var(--on-pink);
+}
+.chip:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
+/* The order shown here is the answer, so the decimal markers stay on: a ranked
+   list without its numbers is a list that lost the thing it was ranking. */
+.pref-list {
+  margin: 0;
+  padding-left: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.pref-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 12px;
+  background: var(--paper);
+  border: 2.5px solid var(--border);
+  border-radius: 14px;
+  list-style: decimal;
+}
+.pref-list .pref-name {
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.pref-list .hint {
+  margin: 0;
+}
+.pref-list .row-gap {
+  margin-left: auto;
+}
+.meter {
+  position: relative;
+  height: 30px;
+  border: 3px solid var(--border);
+  border-radius: 999px;
+  background: var(--paper);
+  overflow: hidden;
+}
+.meter-bar {
+  height: 100%;
+  background: var(--blue);
+  transition: width 0.25s ease;
+}
+.meter-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12.5px;
+  font-weight: 700;
+  /* The bar runs underneath it, so the text needs its own ground. */
+  color: var(--text);
+  text-shadow: 0 0 6px var(--paper), 0 0 6px var(--paper), 0 0 6px var(--paper);
+}
+.photo-block {
+  border: 3px dashed var(--border);
+  border-radius: 16px;
+  padding: 16px;
+}
+.photo-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+.photo-text {
+  flex: 1;
+  min-width: 0;
+}
+.photo-text b {
+  font-size: 13.5px;
+}
+.avatar {
+  width: 84px;
+  height: 84px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 3px solid var(--border);
+  background: var(--blue);
+  color: var(--on-blue);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 30px;
+  overflow: hidden;
+}
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* ---- the one-at-a-time suggestion (stage 4) ---- */
+.match-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.match-header h2 {
+  font-family: var(--font-display);
+  font-size: 26px;
+  text-transform: uppercase;
+  margin: 0;
+}
+/* The only number the screen is allowed about this person. */
+.compat-badge {
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--yellow);
+  /* A fixed dark ink: --ink flips to near-white in dark mode, and near-white on
+     this yellow would be unreadable. */
+  color: var(--on-yellow);
+  border: 2.5px solid var(--border);
+  padding: 5px 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.match-card {
+  background: var(--paper);
+  border: 3px solid var(--border);
+  border-radius: 18px;
+  padding: 24px;
+  text-align: center;
+}
+/* The stand-in for a photo that does not exist yet, and will not until stage 6. */
+.silhouette {
+  width: 84px;
+  height: 84px;
+  margin: 0 auto 16px;
+  border-radius: 50%;
+  background: var(--blue);
+  border: 3px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+}
+.match-meta {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin: 0 0 14px;
+}
+.match-meta b {
+  color: var(--text);
+  font-weight: 700;
+}
+.match-ask {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin: 0 0 6px;
+}
+.match-prompt {
+  font-family: var(--font-display);
+  font-size: 20px;
+  line-height: 1.35;
+  margin: 0 0 18px;
+  padding: 0 4px;
+  overflow-wrap: break-word;
+}
+.shared-interests {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  justify-content: center;
+}
+.tag {
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--pink-deep);
+  color: var(--on-pink);
+}
+.match-none {
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+/*
+ * The appearance line on a card: what this student said about themselves, in one
+ * row of dimmed text under the year and faculty. It is deliberately the quietest
+ * thing on the card — a match reads the answer and the shared interests first, and
+ * a body type is not a reason to pick the card up.
+ */
+.match-look {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  text-align: center;
+  margin: 8px 0 0;
+}
+/*
+ * What they are after. The same pill as a shared interest with the fill taken out,
+ * because a card with two rows of solid pink has two things shouting at the same
+ * volume, and only one of them is about you.
+ */
+.tag.ghost {
+  background: transparent;
+  color: var(--text);
+  box-shadow: inset 0 0 0 2px var(--border);
+}
+.match-seeks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  justify-content: center;
+  margin-top: 12px;
+}
+.match-note {
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+  margin: 12px 0 0;
+  overflow-wrap: break-word;
+}
+.match-count {
+  margin-top: 14px;
+  color: var(--text-dim);
+}
+.match-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 22px;
+}
+.match-actions .btn:first-child {
+  flex: 1;
+}
+.match-actions .btn:last-child {
+  flex: 1.4;
+}
+
+/* ── Stage 5: anonymous chat ────────────────────────────────────────────────
+   The design's chat block, transcribed. What is NOT here is on purpose: there
+   is no typing-indicator style, because NFR-3.3 bans a typing indicator, a seen
+   receipt and an online dot — each is a timestamp about one specific person. */
+
+/* Chats.jsx */
+.thread-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.thread-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--paper);
+  border: 2.5px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 4px 4px 0 var(--border);
+  color: var(--text);
+}
+.thread-row:hover {
+  color: var(--text);
+  background: var(--paper-2);
+}
+.thread-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.thread-who {
+  font-weight: 700;
+  font-size: 14px;
+}
+.thread-closed {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-style: normal;
+  color: var(--text-dim);
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 7px;
+  margin-left: 8px;
+}
+.thread-last {
+  font-size: 13px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.thread-when {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+.chat-live {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+  margin: 0 0 12px;
+}
+
+/* Chat.jsx */
+.silhouette.small {
+  width: 38px;
+  height: 38px;
+  margin: 0;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+.chat-shell {
+  background: var(--paper);
+  border: 3px solid var(--border);
+  border-radius: 20px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 66vh;
+  min-height: 420px;
+}
+.chat-head {
+  padding: 15px 18px;
+  border-bottom: 3px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--paper-2);
+}
+.chat-head .silhouette {
+  width: 38px;
+  height: 38px;
+  margin: 0;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+.chat-head-text {
+  flex: 1;
+  min-width: 0;
+}
+.chat-head-text b {
+  display: block;
+  font-size: 14px;
+}
+.chat-head-text span {
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.chat-wire {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  flex-shrink: 0;
+}
+.chat-wire.on {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: var(--on-blue);
+}
+.chat-banner {
+  padding: 11px 16px;
+  background: var(--yellow);
+  color: var(--on-yellow);
+  border-bottom: 3px solid var(--border);
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.chat-banner a {
+  color: var(--ink);
+  text-decoration: underline;
+  font-weight: 700;
+}
+.chat-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.chat-start {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  text-align: center;
+  margin: 0 0 6px;
+}
+.bubble {
+  max-width: 78%;
+  margin: 0;
+  padding: 10px 15px;
+  border-radius: 16px;
+  font-size: 14px;
+  line-height: 1.45;
+  border: 2.5px solid var(--border);
+  overflow-wrap: break-word;
+}
+.bubble.them {
+  background: var(--paper-2);
+  align-self: flex-start;
+  border-bottom-left-radius: 4px;
+}
+.bubble.me {
+  background: var(--yellow);
+  /* The bubble is the one place a message's own words sit on the brand yellow, and
+     --text flips to near-white in dark mode: measured 1.26:1 before this line. */
+  color: var(--on-yellow);
+  align-self: flex-end;
+  border-bottom-right-radius: 4px;
+  font-weight: 500;
+}
+.bubble.pending {
+  opacity: 0.55;
+}
+.bubble-time {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+/* Their bubble is paper, so --text-dim is right there. Yours is the fixed yellow,
+   and the dark scheme's --text-dim on it measured 1.48:1. */
+.bubble.me .bubble-time {
+  color: var(--on-yellow-dim);
+}
+.chat-input-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 13px;
+  border-top: 3px solid var(--border);
+  background: var(--paper-2);
+}
+.chat-input-row input {
+  flex: 1;
+  margin: 0;
+  min-width: 0;
+}
+.chat-count {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+.send-btn {
+  background: var(--pink-deep);
+  border: 2.5px solid var(--border);
+  color: var(--on-pink);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 16px;
+  padding: 0;
+}
+.send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.chat-closed-note {
+  margin: 0;
+  padding: 13px;
+  border-top: 3px solid var(--border);
+  background: var(--paper-2);
+  font-size: 12.5px;
+  color: var(--text-dim);
+  text-align: center;
+}
+.thread-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+.thread-actions .btn {
+  flex: 1;
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+/* ---------- Stage 6: the mutual reveal ---------- */
+.reveal-prompt {
+  text-align: center;
+  padding: 14px 16px;
+  border-top: 3px solid var(--border);
+  background: var(--blue);
+  color: var(--on-blue);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  /* The ring is drawn outside the button, so it lands on this band, not on the
+     button — and the page ring on a --blue band measured 1.00:1 in both schemes:
+     no visible focus at all. On a saturated band the ring is the band's own ink. */
+  --ring: var(--on-blue);
+}
+.reveal-prompt p {
+  font-size: 13px;
+  color: #fff;
+  margin: 0 0 6px;
+  font-weight: 600;
+}
+.reveal-prompt .reveal-prior {
+  font-weight: 500;
+  opacity: 0.8;
+}
+.reveal-prompt.quiet {
+  background: var(--paper-2);
+  color: var(--text);
+  border-top-style: dashed;
+  /* Back on a page-coloured card, so back on the page ring. */
+  --ring: var(--blue-text);
+}
+.reveal-prompt.quiet p {
+  color: var(--text-dim);
+  margin-bottom: 0;
+}
+.reveal-prompt.done {
+  background: var(--pink-deep);
+  color: var(--on-pink);
+  --ring: var(--on-pink);
+}
+.reveal-stage {
+  text-align: center;
+  padding: 40px 26px;
+  border-radius: 20px;
+  background: var(--ink);
+  color: var(--paper);
+  border: 3px solid var(--border);
+  overflow: hidden;
+  /* The band flips and the page ring does not: see --ring-on-ink. */
+  --ring: var(--ring-on-ink);
+}
+.reveal-stage.done {
+  background: var(--pink-deep);
+  color: var(--on-pink);
+  /* --blue on this pink is 1.08:1, and the lighter blue is 2.33:1 — neither is a
+     visible ring. The band's own ink is 6.58:1. */
+  --ring: var(--on-pink);
+}
+.reveal-sub {
+  font-size: 12.5px;
+  opacity: 0.7;
+  margin: 0 0 8px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.reveal-title {
+  font-family: var(--font-display);
+  font-size: 30px;
+  text-transform: uppercase;
+  margin: 0 0 22px;
+}
+.reveal-avatar {
+  width: 116px;
+  height: 116px;
+  border-radius: 50%;
+  margin: 0 auto 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 40px;
+  background: var(--yellow);
+  color: var(--on-yellow);
+  border: 3px solid var(--paper);
+  overflow: hidden;
+}
+.reveal-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.reveal-name {
+  font-family: var(--font-display);
+  font-size: 30px;
+  margin: 0 0 4px;
+}
+.reveal-meta {
+  font-size: 13.5px;
+  opacity: 0.9;
+  margin: 0 0 22px;
+}
+.reveal-detail {
+  margin-top: 18px;
+}
+.reveal-detail .shared-interests {
+  justify-content: flex-start;
+  margin-bottom: 20px;
+}
+.waiting-row {
+  font-size: 13.5px;
+  opacity: 0.85;
+  margin: 0 auto 18px;
+  max-width: 42ch;
+}
+.bottom-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+.bottom-actions .btn {
+  flex: 1;
+}
+.thread-revealed {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-style: normal;
+  color: var(--on-pink);
+  background: var(--pink-deep);
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 7px;
+  margin-left: 8px;
+}
+.silhouette img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 820px) {
+  .hero-inner {
+    grid-template-columns: 1fr;
+  }
+  .hero-art {
+    display: none;
+  }
+  h1.display {
+    font-size: 42px;
+  }
+  .steps {
+    grid-template-columns: 1fr;
+  }
+  .compare {
+    grid-template-columns: 1fr;
+  }
+  .row2 {
+    grid-template-columns: 1fr;
+  }
+  .nav-links a:not(.cta):not(.keep) {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  h1.display {
+    font-size: 36px;
+  }
+  .footer-cta h2 {
+    font-size: 32px;
+  }
+}
+
+/* The design moves cards on hover; motion-sensitive users get a static page. */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ---------- Stage 7: reporting, blocking, and the staff queue ----------
+   Named `.safety-*` and `.queue-*` rather than `.block-*`: on this site `.block`
+   already means "full width", and a safety control that stole it would change
+   shape depending on load order. */
+.safety {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 2px dashed var(--border);
+}
+.safety-row {
+  gap: 8px;
+}
+.safety-lead {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+.safety-panel {
+  margin-top: 12px;
+  padding: 14px;
+  border: 2px solid var(--border);
+  border-radius: 14px;
+  background: var(--paper-2);
+}
+.thread-safety {
+  flex: 1 1 100%;
+}
+.thread-safety .btn {
+  flex: 0 0 auto;
+}
+.blocked-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 2px solid var(--paper-2);
+}
+
+.staff-tabs {
+  margin-bottom: 16px;
+}
+.queue-row {
+  margin-top: 16px;
+  padding: 16px;
+  border: 3px solid var(--border);
+  border-radius: 18px;
+  background: var(--paper);
+}
+.queue-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.queue-kind {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.queue-reason {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+}
+.queue-when {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.queue-flag {
+  padding: 3px 10px;
+  border: 2px solid var(--pink);
+  border-radius: 999px;
+  color: var(--pink-text);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.queue-cols {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 14px;
+}
+.queue-cards {
+  display: grid;
+  gap: 10px;
+}
+.queue-card {
+  padding: 10px 12px;
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  background: var(--paper-2);
+}
+.queue-sub {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+.queue-excerpt {
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 4px solid var(--blue);
+  background: var(--paper-2);
+  font-size: 13.5px;
+  white-space: pre-wrap;
+  /* A report is quoted evidence: an over-long answer must not widen the queue. */
+  overflow-wrap: anywhere;
+}
+.queue-detail,
+.queue-decided {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.queue-decided {
+  padding-top: 10px;
+  border-top: 2px dashed var(--border);
+  font-weight: 600;
+}
+.queue-account {
+  margin-top: 12px;
+}
+.queue-photo {
+  margin-top: 12px;
+  padding: 12px;
+  border: 2px solid var(--pink);
+  border-radius: 12px;
+}
+.queue-photo img {
+  width: 150px;
+  height: 150px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 2px solid var(--border);
+}
+.record {
+  margin-top: 20px;
+  padding: 16px;
+  border: 3px double var(--border);
+  border-radius: 18px;
+}
+.record-list {
+  margin: 0 0 14px;
+  padding-left: 18px;
+  font-size: 13px;
+}
+.record-list li {
+  margin-bottom: 8px;
+}
+
+/* FR-8.1: the aggregate panel. Counts only, so the type does the ranking — a big
+   number and a small uppercase label, with nothing clickable anywhere in it. */
+.stats {
+  margin: 4px 0 18px;
+  padding: 16px;
+  border: 3px double var(--border);
+  border-radius: 18px;
+  background: var(--paper-2);
+}
+.stat-group {
+  margin-bottom: 16px;
+}
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 8px;
+}
+.stat {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px;
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  background: var(--paper);
+}
+.stat b {
+  font-size: 22px;
+  line-height: 1.2;
+}
+.stat span {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+.stat-trend {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.stat-trend th,
+.stat-trend td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+}
+.stat-trend thead th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+.stat-trend tbody th {
+  text-align: left;
+  font-weight: 600;
+}
+
+/* The institutions table borrows the stats table's rules, which right-align every
+   cell because the stats panel holds numbers. A college's domains are not a number,
+   and the shared `.tag` is the pink interest pill — five of those per row would turn
+   a staff table into a wall of magenta. */
+.institution-table th,
+.institution-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 10px 8px;
+}
+.institution-table td .tag {
+  display: inline-block;
+  margin: 0 5px 5px 0;
+  background: var(--paper);
+  color: var(--text);
+  border: 2px solid var(--border);
+  font-weight: 600;
+  font-family: var(--font-mono, inherit);
+}
+.panel-form {
+  border: 3px solid var(--border);
+  border-radius: 18px;
+  background: var(--paper-2);
+  padding: 18px;
+}
+
+@media (max-width: 760px) {
+  .queue-cols {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Stage 8: notifications ──────────────────────────────────────────────────
+   The bell and its settings. What is NOT here matters as much as what is: there
+   is no per-notice avatar, no peer name slot, no "seen" styling that belongs to
+   the other half of a conversation — NFR-3.3. Every surface in this section reads
+   the server's own unread count, so the badge and the list cannot disagree. */
+
+/* AppShell.jsx — the nav's badge. Ink rather than pink: this number has to be
+   readable at 11px, and pink on paper is 2:1. */
+.bell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.bell-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+/* Notifications.jsx */
+.bell-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.bell-head .chat-live {
+  margin: 0;
+}
+.notif-list {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.notif-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--paper);
+  border: 2.5px solid var(--border);
+  border-radius: 18px;
+}
+.notif-unread {
+  border-left: 8px solid var(--pink);
+}
+.notif-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  color: var(--text);
+  text-decoration: none;
+}
+a.notif-body:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+.notif-kind {
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+.notif-text {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.notif-when {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+.notif-seen {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+/* Account.jsx — FR-7.4's three switches, as a native checkbox per switch. */
+.switch-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 2.5px solid var(--border);
+  border-radius: 16px;
+  cursor: pointer;
+}
+.switch-row input[type='checkbox'] {
+  width: 20px;
+  height: 20px;
+  margin: 2px 0 0;
+  accent-color: var(--pink);
+  flex-shrink: 0;
+}
+.switch-row input[type='checkbox']:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.switch-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ---------- Stage 9b: the legal pages, and the footer that reaches them ---------- */
+
+/*
+  NFR-3.4 and NFR-8.3 ask for an *accessible* notice, and the first accessibility
+  problem of a legal page is its measure: a paragraph across a 560px card at 15px is
+  about 95 characters per line, which is where reading breaks. So the body is capped
+  narrower than the card and every element inside is spaced to be scanned, not parsed.
+*/
+.legal {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+.legal-lead {
+  font-size: 16.5px;
+  line-height: 1.6;
+  margin: 0;
+}
+.legal-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* The footer's dark band used to sit flush against the last paragraph. */
+  scroll-margin-top: 90px;
+}
+.legal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 62ch;
+}
+.legal-body p,
+.legal-body li {
+  font-size: 14.5px;
+  line-height: 1.62;
+  margin: 0;
+}
+.legal-body ul {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.legal-body b {
+  font-weight: 700;
+}
+/*
+  The footer now carries links, so it is two lines on a phone and one on a wide
+  screen. `color: inherit` plus an underline is deliberate: on the ink band a link
+  the same grey as the sentence around it is indistinguishable from text.
+*/
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 18px;
+  padding-left: 18px;
+  padding-right: 18px;
+}
+.footer-links {
+  display: inline-flex;
+  gap: 14px;
+}
+.footer a {
+  color: var(--paper-2);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-weight: 600;
+}
+.footer a:hover {
+  color: var(--on-ink-accent);
+}
+/* The counts the downloaded file carries, shown before it is downloaded. */
+.held-list {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+/* ---------- Stage 9c: tap targets ---------- */
+
+/*
+  NFR-4.2 says the site is built for the phone first, and a 15px-tall link is not
+  a thing a thumb hits reliably. WCAG 2.5.5 puts the bar at 44x44 CSS pixels; it is
+  AAA in 2.1, so this is the project's own mobile requirement rather than an AA
+  gate — but every control below had measured under 44 at a 510px viewport and now
+  does not.
+
+  Heights are grown with min-height rather than padding so the words keep their
+  positions and only the hit area changes. The checkboxes on the account screen
+  stay 20px because each one sits inside a full-width label row that measures over
+  44, and clicking the row toggles it — the target is the row.
+*/
+.btn,
+.chip,
+.nav-links a,
+.wordmark,
+.footer a,
+.chat-input-row input {
+  min-height: 44px;
+}
+.chip,
+.nav-links a,
+.wordmark,
+.footer a {
+  display: inline-flex;
+  align-items: center;
+}
+
+/*
+  The lines under the auth forms — "Forgot password · Create a profile",
+  "Already have an account? Sign in" — are the escape hatch out of a form, and they
+  measured 15px tall at a 510px viewport, which is not a thing a thumb aims at.
+  min-height cannot help a plain inline box, so only the hit area grows: vertical
+  padding on an inline anchor is part of its target, while the words, the underline
+  and the line they sit on all stay exactly where they were.
+
+  A link carried inside a sentence is exempt from the target-size rules, so for the
+  note links that are mid-sentence this is a kindness, not the requirement.
+*/
+.hint a {
+  padding: 15px 0;
+}
+
+/* ---------- Stage 9c: the nav at a phone width ---------- */
+
+/*
+  Measured, not guessed: at a 510px viewport, signed in, the nav row is 413px wide
+  starting at x=111, so it runs to 524 and the whole document scrolls sideways by
+  14px. A signed-in staff account carries seven items there.
+
+  It wraps rather than scrolls, because a row you have to drag sideways to read is a
+  row where "Staff queue" quietly does not exist. The 44px tap targets above make
+  each wrapped row that tall, so the row gap and the nav's own padding shrink to
+  keep the header from eating the screen, and the anchor offset follows the header
+  it is meant to clear.
+*/
+@media (max-width: 720px) {
+  html {
+    scroll-padding-top: calc(env(safe-area-inset-top, 0px) + 116px);
+  }
+  .nav-inner {
+    flex-wrap: wrap;
+    row-gap: 6px;
+    padding: 10px 18px;
+  }
+  .nav-links {
+    flex-wrap: wrap;
+    gap: 6px 16px;
+  }
+}

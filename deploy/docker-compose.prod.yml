@@ -1,0 +1,118 @@
+# The production shape of this project: the database, and one process that serves
+# both the site and the API in front of it.
+#
+#   docker compose -f deploy/docker-compose.prod.yml --env-file deploy/prod.env up -d --build
+#
+# Deliberately a **separate file** from the root `docker-compose.yml`. That one is the
+# development database on a laptop, with its port published to 127.0.0.1 so the API can
+# reach it directly, and it works without any of the keys below. This one assumes a
+# server, a domain and a proxy that terminates TLS, and refuses to start without them —
+# which is the same bargain `api/src/config.js` makes at boot, in eight sentences that
+# each name one thing that would otherwise go quietly wrong.
+#
+# Nothing here is exposed to the internet. The only published port is 4100 on
+# 127.0.0.1, for the proxy (see Caddyfile / nginx.unmask.conf in this folder) to forward
+# to after it has done HTTPS. The database publishes no port at all: it is reachable
+# only over this compose network, by name.
+
+# A fixed project name, so the volumes are called `unmask-prod_unmask-mongo-data` and
+# `unmask-prod_unmask-photos` on the server instead of being named after whichever folder
+# someone happened to run this from. A backup target you have to guess is a backup target
+# someone gets wrong.
+name: unmask-prod
+
+services:
+  mongo:
+    image: mongo:7
+    # A name of its own, deliberately *not* the development file's `unmask-mongo`: a
+    # container name is global on a Docker host, and a second file claiming the name a
+    # running database answers to does not fail politely — it recreates the container
+    # that is holding the data. This one is also the name `npm run backup` types on a
+    # server:  MONGO_CONTAINER=unmask-server-mongo npm run backup
+    container_name: unmask-server-mongo
+    restart: unless-stopped
+    # No `ports:` block. Publishing 27017 on a server is how a database ends up in a
+    # scan report; the API reaches it as `mongo:27017` because they share this network.
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:?set MONGO_USER in deploy/prod.env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?set MONGO_PASSWORD in deploy/prod.env}
+      MONGO_INITDB_DATABASE: unmask
+    volumes:
+      - unmask-mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: unmask-server-api
+    restart: unless-stopped
+    # PID 1 must forward SIGTERM, or `docker compose stop` waits 10 seconds for nothing
+    # and the chat socket never gets its 4-second goodbye.
+    init: true
+    stop_grace_period: 15s
+    depends_on:
+      mongo:
+        condition: service_healthy
+    ports:
+      # 4100 on the loopback interface only — never a public address. The host port is a
+      # variable so this file can be rehearsed on a machine that already runs the
+      # development API on 4100; on a server, leave it unset.
+      - "127.0.0.1:${API_HOST_PORT:-4100}:4100"
+    environment:
+      NODE_ENV: production
+      PORT: 4100
+
+      # The database, by service name, from inside the network.
+      MONGO_URL: mongodb://${MONGO_USER}:${MONGO_PASSWORD}@mongo:27017/unmask?authSource=admin
+
+      # One value, set twice on purpose: WEB_ORIGIN is both the browser's allowlist and
+      # the WebSocket handshake allowlist (api/src/realtime.js). If it does not contain
+      # the address students actually type, chat is refused at the handshake and nothing
+      # else on the site looks broken. config.js calls this out and refuses to boot.
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:?set PUBLIC_APP_URL to the https address of the site}
+      WEB_ORIGIN: ${PUBLIC_APP_URL}
+
+      # There is a proxy in front of this process — that is what HTTPS means here — so
+      # one hop is believed. With 0, every student arrives as 127.0.0.1 and the login
+      # rate limit is one bucket shared by the entire campus: one person typing wrong
+      # passwords locks out everybody.
+      TRUST_PROXY_HOPS: 1
+
+      SERVE_WEB: "1"
+      WEB_DIST: ./web/dist
+      PHOTO_DIR: ./storage/photos
+
+      # Which email domains may register is not in this file. It is one document per
+      # institution in the `institutions` collection, and a staff member adds a college
+      # at /staff — no redeploy, no restart, no edit here.
+
+      # Empty SESSION_SECRET cannot sign a cookie; the gate says so instead of starting.
+      SESSION_SECRET: ${SESSION_SECRET:?generate a 64-character hex string and put it in deploy/prod.env}
+
+      # Registration ends in an emailed link. With no SMTP_HOST the API writes mail to
+      # api/outbox/ instead, which is a development convenience and, on a server, a way
+      # for nobody to ever confirm an address. That is gate P4, and it stops the boot.
+      SMTP_HOST: ${SMTP_HOST:?your mail relay, or any provider that will send confirmations}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-Unmask <no-reply@your-domain>}
+    volumes:
+      # The uploaded photos, in a named volume rather than in the container's writable
+      # layer, which is deleted the moment the image is replaced.
+      - unmask-photos:/srv/unmask/api/storage
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+volumes:
+  unmask-mongo-data:
+  unmask-photos:

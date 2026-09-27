@@ -1,0 +1,40 @@
+# TLS in front of Unmask, in Caddy — the shortest config that is correct, which is why
+# it is the one shipped here. Caddy asks Let's Encrypt for a certificate for the
+# hostname, renews it forever, redirects http:// to https:// on its own, and passes
+# `Connection`/`Upgrade` through without being told, so the chat socket works the first
+# time. With nginx you write all of that by hand; see nginx.unmask.conf next to this
+# file if the server already runs nginx.
+#
+#   sudo cp deploy/Caddyfile /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+#
+# Two things follow from putting a proxy here, and both are already in the compose file:
+#
+#   TRUST_PROXY_HOPS=1   — this process now learns a student's address from
+#                          X-Forwarded-For, which is right behind a proxy and wrong
+#                          without one. See api/src/config.js.
+#   the API stays on 127.0.0.1:4100 — it never gets a public interface. The only thing
+#                          reachable from a lecture hall is this hostname, on 443.
+
+unmask.example.ac.za {
+	# Compress the JS, the CSS and the JSON. The fonts are already compressed, and
+	# Caddy knows that by extension, so they are simply passed through.
+	encode zstd gzip
+
+	# One cap on the body, so a slow post cannot occupy a connection indefinitely. The
+	# real limit is in the API (5 MB, checked as the file is read, from a browser that
+	# has already re-sized the picture); this is only the door keeping the hallway clear.
+
+	# Everything — the page, /api, and the /ws handshake — is the one process. There is
+	# no path split to keep in step, and no second place where a header could disagree
+	# with the CSP the API already sets.
+	reverse_proxy 127.0.0.1:4100 {
+		request_body {
+			max_size 10MB
+		}
+
+		# Do not buffer the socket: a chat frame should reach the other student on the
+		# same packet that carried it.
+		flush_interval -1
+	}
+}

@@ -1,0 +1,20 @@
+node_modules/
+.env
+.env.*
+!.env.example
+deploy/prod.env
+.DS_Store
+npm-debug.log*
+
+# Profile photos and verification links are personal data. Never committed.
+# A backup folder is the whole database plus every photo, in plain files. Of all the
+# things in this repository it is the one that must never be committed.
+storage/
+api/storage/
+outbox/
+api/outbox/
+backups/
+api/backups/
+
+dist/
+web/dist/

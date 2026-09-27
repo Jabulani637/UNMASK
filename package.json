@@ -1,0 +1,21 @@
+{
+  "name": "unmask",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Unmask — anonymity-first matching for verified university and TVET students",
+  "scripts": {
+    "setup": "npm install && npm --prefix api install && npm --prefix web install",
+    "db": "docker compose up -d",
+    "db:logs": "docker compose logs -f mongo",
+    "dev": "npm --prefix api run dev",
+    "dev:web": "npm --prefix web run dev",
+    "start": "npm --prefix api run start",
+    "seed": "npm --prefix api run seed",
+    "migrate:institutions": "npm --prefix api run migrate:institutions --",
+    "staff": "npm --prefix api run staff --",
+    "backup": "npm --prefix api run backup --",
+    "restore": "npm --prefix api run restore --",
+    "build": "npm --prefix web run build",
+    "test": "npm --prefix api run test"
+  }
+}

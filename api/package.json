@@ -1,0 +1,26 @@
+{
+  "name": "unmask-api",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "seed": "node scripts/seed.js",
+    "migrate:institutions": "node scripts/migrate-institutions.js",
+    "staff": "node scripts/staff.js",
+    "backup": "node scripts/backup.js",
+    "restore": "node scripts/restore.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "mongoose": "^8.9.5",
+    "multer": "^2.0.1",
+    "nodemailer": "^6.10.0",
+    "ws": "^8.18.0"
+  }
+}

@@ -1,0 +1,16 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: unmask-mongo
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-unmask}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-unmask-dev-only}
+      MONGO_INITDB_DATABASE: unmask
+    volumes:
+      - unmask-mongo-data:/data/db
+
+volumes:
+  unmask-mongo-data:

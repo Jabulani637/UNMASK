@@ -1,0 +1,41 @@
+# The build context is the project root (deploy/Dockerfile needs `api/` and `web/` side
+# by side), which means every line below is something that would otherwise be sent to
+# the daemon and baked into an image that then leaves this machine.
+#
+# The two that matter are not about size:
+#
+#   api/storage   every profile photo students have uploaded
+#   api/backups   a complete copy of the database, plus those same photos
+#
+# A photo of a student, and a dump of who messaged whom, do not belong in a Docker image
+# that someone might push to a registry. They stay on the server, in a volume, and the
+# backup script writes them somewhere the server is not.
+#
+# What is deliberately *not* here: `web/`. Both stages build from the real sources —
+# stage 1 compiles the site with vite, so ignoring any part of web/ would fail the build
+# rather than slim the image.
+
+# ---- dependencies and build output: regenerated inside the image --------------
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+
+# ---- secrets and personal data -----------------------------------------------
+.env
+.env.*
+!.env.example
+deploy/prod.env
+api/storage/
+api/backups/
+api/outbox/
+outbox/
+storage/
+
+# ---- things the running container never reads --------------------------------
+.git/
+PLAN/
+api/test/
+**/*.log
+**/.DS_Store
+.DS_Store
