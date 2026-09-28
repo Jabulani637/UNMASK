@@ -74,6 +74,7 @@ function r2Config() {
 }
 
 const config = {
+  envFile,
   envFileFound,
   nodeEnv: process.env.NODE_ENV || 'development',
   port: Number(process.env.PORT || 4100),
@@ -230,7 +231,7 @@ function productionProblems() {
   }
 
   if (config.devAutoVerify) {
-    problems.push('DEV_AUTO_VERIFY is on — every address that registers is marked confirmed without ever proving it, so anyone who types a stranger\'s student email has an account in their name. It is a developer\'s convenience and it cannot ship: set DEV_AUTO_VERIFY=0 (or remove it) and configure SMTP_HOST so a real student gets a real link.');
+    problems.push('DEV_AUTO_VERIFY is on — every address that registers is marked confirmed without ever proving it, so anyone who types a stranger\'s student email has an account in their name. It is a developer\'s convenience and it cannot ship: set DEV_AUTO_VERIFY=0 (or remove it) and configure SMTP_HOST so a real student gets a real code.');
   }
 
   if (process.env.TRUST_PROXY_HOPS === undefined || process.env.TRUST_PROXY_HOPS === '') {
@@ -285,7 +286,14 @@ function configProblems() {
     problems.push(`TRUST_PROXY_HOPS is "${process.env.TRUST_PROXY_HOPS}" — it must be a whole number of proxies: 0 when this API is reachable directly, 1 behind a host that terminates TLS for you.`);
   }
   if (config.smtp.host && (!config.smtp.user || !config.smtp.password)) {
-    problems.push('SMTP_HOST is set but SMTP_USER/SMTP_PASSWORD are not — verification emails would fail silently.');
+    const missing = [];
+    if (!config.smtp.user) missing.push('SMTP_USER');
+    if (!config.smtp.password) missing.push('SMTP_PASSWORD');
+    const which = missing.join(' and ');
+    problems.push(
+      `SMTP_HOST is set but ${which} ${missing.length === 1 ? 'is' : 'are'} not — verification emails would fail silently. ` +
+        `${missing.length === 1 ? 'It must carry that exact name' : 'Both must carry these exact names'}: a sender address or a key filed under any other name is a different variable, and this process never reads it.`
+    );
   }
 
   // Two, because these are all that exist. A typo here (`s3`, `r2bucket`) would

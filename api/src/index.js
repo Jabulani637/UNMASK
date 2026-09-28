@@ -22,7 +22,13 @@ function logProblems() {
 
   console.error('\nUnmask API cannot start:');
   for (const problem of problems) console.error(`  - ${problem}`);
-  console.error('\nEdit UNMASK\\.env (copy it from UNMASK\\.env.example), then run: npm run dev\n');
+  // A host that deploys from git has no file here to edit, and telling it to open
+  // one costs a round trip through the dashboard to discover that.
+  console.error(
+    config.envFileFound
+      ? '\nEdit UNMASK\\.env (copy it from UNMASK\\.env.example), then run: npm run dev\n'
+      : `\nNo .env was found at ${config.envFile}, so these came from the environment: fix them there — on Render, Railway or Fly that is the service's Environment Variables tab, and the change needs a new deploy to be read.\n`
+  );
   return false;
 }
 

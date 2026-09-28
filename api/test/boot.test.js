@@ -283,8 +283,19 @@ test('stage 9d — the production boot gates, each one proven to fire', async t 
   });
 
   await t.test('gate: an SMTP host with no credentials, which fails a confirmation code silently', () => {
-    const line = only(loadProduction({ SMTP_USER: '', SMTP_PASSWORD: '' }).problems, 'SMTP_USER/SMTP_PASSWORD are not', 'smtp without credentials');
-    assert.match(line, /fail silently/);
+    const both = only(loadProduction({ SMTP_USER: '', SMTP_PASSWORD: '' }).problems, 'SMTP_USER and SMTP_PASSWORD are not', 'smtp with neither');
+    assert.match(both, /fail silently/);
+
+    // Each half names only itself. A sentence that offers two keys when one of
+    // them is present sends the reader checking both, finding both fine, and
+    // redeploying the same failure.
+    const noUser = only(loadProduction({ SMTP_USER: '' }).problems, 'SMTP_HOST is set but', 'smtp with no user');
+    assert.match(noUser, /^SMTP_HOST is set but SMTP_USER is not/);
+    assert.ok(!noUser.includes('SMTP_PASSWORD'), `names the key that is set: ${noUser}`);
+
+    const noPassword = only(loadProduction({ SMTP_PASSWORD: '' }).problems, 'SMTP_HOST is set but', 'smtp with no password');
+    assert.match(noPassword, /^SMTP_HOST is set but SMTP_PASSWORD is not/);
+    assert.ok(!noPassword.includes('SMTP_USER'), `names the key that is set: ${noPassword}`);
   });
 
   // Eighteen sentences in all, and all eighteen now fire in front of a test. The
