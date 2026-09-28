@@ -49,6 +49,8 @@ const PROD = {
   SMTP_USER: 'unmask@mail.cput.ac.za',
   SMTP_PASSWORD: 'an-smtp-password',
   MAIL_FROM: 'Unmask <no-reply@unmask.ac.za>',
+  BREVO_API_KEY: '',
+  BREVO_API_URL: '',
   PUBLIC_APP_URL: 'https://unmask.cput.ac.za',
   OUTBOX_DIR: './outbox',
   PHOTO_DIR: './storage/photos',
@@ -159,6 +161,30 @@ test('stage 9d — the production boot gates, each one proven to fire', async t 
   await t.test('gate: no SMTP, so every confirmation code is written to a folder on the server', () => {
     const line = only(loadProduction({ SMTP_HOST: '', SMTP_USER: '', SMTP_PASSWORD: '' }).problems, 'SMTP_HOST is empty', 'no smtp');
     assert.match(line, /nobody can finish registering/);
+    assert.match(line, /BREVO_API_KEY/);
+  });
+
+  // The reason the sentence above had to change: Render's free tier blocks SMTP
+  // egress outright, so a host that can never be given an SMTP relay now has a second
+  // way to be configured — and it must not be refused for the missing first one.
+  await t.test('an HTTPS mail key stands in for an SMTP host, and says nothing', () => {
+    const { config, problems } = loadProduction({
+      SMTP_HOST: '',
+      SMTP_USER: '',
+      SMTP_PASSWORD: '',
+      BREVO_API_KEY: 'xkeysib-a-real-key-from-brevo-settings',
+    });
+    assert.deepEqual(problems, [], problems.join('\n'));
+    assert.equal(config.mail.apiKey, 'xkeysib-a-real-key-from-brevo-settings');
+  });
+
+  await t.test('gate: a mail key pointed at a plain-http URL, which sends the key in the clear', () => {
+    const line = only(
+      loadProduction({ BREVO_API_KEY: 'xkeysib-a-real-key', BREVO_API_URL: 'http://api.brevo.com/v3/smtp/email' }).problems,
+      'BREVO_API_URL is "http://',
+      'http brevo url'
+    );
+    assert.match(line, /in a header/);
   });
 
   await t.test('gate: the database still has the password printed in the template', () => {
@@ -298,7 +324,27 @@ test('stage 9d — the production boot gates, each one proven to fire', async t 
     assert.ok(!noPassword.includes('SMTP_USER'), `names the key that is set: ${noPassword}`);
   });
 
-  // Eighteen sentences in all, and all eighteen now fire in front of a test. The
+  await t.test('gate: an HTTPS mail key and no real sender, which Brevo refuses on every message', () => {
+    // All three spellings, because a person who copies `.env.example` without editing
+    // it lands on the second, and one who leaves `MAIL_FROM` blank in `prod.env` lands
+    // on the third — and a gate that only knows the first is a gate that fires in a
+    // test and not in a deployment.
+    for (const from of [
+      'Unmask <no-reply@unmask.local>',
+      'Unmask <no-reply@unmask.example>',
+      'Unmask <no-reply@your-domain>',
+    ]) {
+      const line = only(
+        loadProduction({ BREVO_API_KEY: 'xkeysib-a-real-key', MAIL_FROM: from }).problems,
+        'BREVO_API_KEY is set but MAIL_FROM is still',
+        `brevo key, placeholder sender ${from}`
+      );
+      assert.match(line, /Senders, Domains and IPs/);
+      assert.ok(line.includes(from), `names the address it is refusing: ${line}`);
+    }
+  });
+
+  // Twenty sentences in all, and all twenty now fire in front of a test. The
   // last one needed the file-presence question answered falsely rather than the
   // developer's own project file deleted — see `asIfNoEnvFile`.
 

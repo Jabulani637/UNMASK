@@ -135,7 +135,16 @@ the site into `web\dist`, which is what lets the API serve it. Without that seco
 | `TRUST_PROXY_HOPS` | `1` | Render terminates TLS; with `0` every student arrives as one address and one person's wrong passwords lock out the whole campus |
 | `PHOTO_STORE` | `r2` | an image rebuild wipes everything inside the container, photos included. A typo here is refused at boot rather than guessed at |
 | `R2_ACCOUNT_ID` (or `R2_ENDPOINT`) `R2_BUCKET` `R2_ACCESS_KEY_ID` `R2_SECRET_ACCESS_KEY` | from §3 — `R2_ACCOUNT_ID` alone builds the endpoint; `R2_ENDPOINT` is the form to use if the bucket has a jurisdiction in its address | asked for whenever `PHOTO_STORE=r2`, in any environment — and an `http://` endpoint is refused on its own, because every photo request signs its secret into that line |
-| `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASSWORD` `MAIL_FROM` | Brevo free tier (300 a day, no card): `smtp-relay.brevo.com` · `587` · the address you verified as a sender · the **32-character SMTP key** from its *SMTP & API* page, not your login password · that same address | in production a confirmation code written to `api/outbox` is a code no student will ever read, so nobody finishes registering — and a folder on a public host that holds live codes is a worse place to keep them |
+| `BREVO_API_KEY` `MAIL_FROM` | the key headed **API key** in Brevo's settings (it starts `xkeysib-`, and it is a different string from the SMTP key) · the address Brevo lists as **Verified** under *Senders, Domains and IPs* | this is the only mail door that works here. See the note below the table |
+| ~~`SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASSWORD`~~ | **leave every one of these empty on Render's free tier** | Render blocks outbound traffic to ports 25, 465 and 587 (their changelog, 26 September 2025). Filling this block in is the one configuration mistake on this host that no boot gate can catch: the process boots, prints `email via smtp-relay.brevo.com`, reports `"emailTransport": "smtp"` as if it were working, and then hangs for two minutes on every single registration before answering `Something went wrong on our end.` |
+
+`BREVO_API_URL` needs no entry — the default is Brevo's own address, and setting it to
+an `http://` value is refused at boot, because the key rides in that request's headers.
+
+The SMTP block is not dead code: it is the door for a server that is allowed to open a
+socket, such as your own machine behind a university relay. `BREVO_API_KEY` simply wins
+when both are set, because a machine configured for both is a machine that meant to use
+the one that reaches the internet.
 
 `SERVE_WEB` needs no entry: with no value the API serves the build if there is one.
 `NODE_ENV=production` is set by Render itself, which is what switches the gates on.
@@ -145,11 +154,14 @@ nothing else — no URL, no path, no key, asserted by a test — and it is the p
 when a page misbehaves:
 
 ```
-"readiness": { "database": true, "sessionSigning": true, "emailTransport": "smtp",
+"readiness": { "database": true, "sessionSigning": true, "emailTransport": "brevo-http",
                "activeInstitutions": 5, "photoStore": { "backend": "r2", "writable": true } }
 ```
 
-`"emailTransport": "local-outbox"` on a public URL means the SMTP block is not filled in.
+`"emailTransport"` names the door a code actually leaves by: `brevo-http` is the HTTPS
+relay and the only correct answer on this host, `smtp` means a relay was configured and
+is *probably* unreachable here, and `local-outbox` on a public URL means neither block
+is filled in and no student can finish registering.
 `"activeInstitutions": 0` means no address at any college can register — run §7.
 `"photoStore": { "writable": false }` means the bucket or the key is wrong, and `reason`
 names which: `unauthorized` is the key pair, `bucket-not-found` is the name, and

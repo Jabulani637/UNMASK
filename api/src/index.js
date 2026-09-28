@@ -123,7 +123,13 @@ async function main() {
         : `  site      not served by this process — set SERVE_WEB=1 after \`npm run build\`, or run the web app separately`
     );
     console.log(
-      `  email     ${config.smtp.host ? `via ${config.smtp.host}` : 'no SMTP_HOST — confirmation codes are written to api/outbox/ instead'}`
+      `  email     ${
+        config.mail.apiKey
+          ? `via ${config.mail.apiUrl} (HTTPS; SMTP is blocked on some hosts, including Render's free tier)`
+          : config.smtp.host
+            ? `via ${config.smtp.host}`
+            : 'no SMTP host and no BREVO_API_KEY — confirmation codes are written to api/outbox/ instead'
+      }`
     );
   });
 

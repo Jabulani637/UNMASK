@@ -787,7 +787,7 @@ Stated here so nobody discovers them in a bad week:
 
 ## Appendix A — the boot gates you will actually hit
 
-`api\src\config.js` refuses to start a production API on eighteen conditions, ten of them
+`api\src\config.js` refuses to start a production API on twenty conditions, eleven of them
 production-only. Each one names the key to edit and what goes wrong without it — and where
 there is no file to edit, which is true of any host that deploys from git, the same
 sentences say to set those keys as that host's environment variables instead. The ones that
@@ -797,13 +797,20 @@ catch people on a first deploy:
 |---|---|---|
 | "…every login would look like a wrong password" | `PUBLIC_APP_URL` starts with `http://` | The session cookie is `Secure` |
 | "…chat is silently dead and nothing else looks broken" | `WEB_ORIGIN` (from `PUBLIC_APP_URL`) does not contain the address students type | The same list is the socket's handshake allowlist |
-| "no SMTP" | `SMTP_HOST` empty | A confirmation code that goes nowhere means nobody finishes signing up, quietly |
+| "No mail transport is configured" | both `SMTP_HOST` and `BREVO_API_KEY` empty | A confirmation code that goes nowhere means nobody finishes signing up, quietly |
+| "`BREVO_API_URL is "http://…"` | that key | The Brevo key rides in that request's headers, so it must not cross an unencrypted line |
+| "`BREVO_API_KEY is set but MAIL_FROM is still …" | `MAIL_FROM` left at the address this project ships with | Brevo refuses a sender it has never seen, so every code comes back refused |
 | "the template database password still in place" | `MONGO_PASSWORD` left as `change-me-local-only` | It is the first thing a scanner tries |
 | "`DEV_AUTO_VERIFY` on" | that key present | A shortcut through the mailbox must not reach a server |
 | "the choices are \"disk\" … or \"r2\"" | a typo in `PHOTO_STORE` | A store that silently fell back to disk would put the pictures back on the machine that was meant to stop holding them |
 | "PHOTO_STORE=r2 but … are missing" | `R2_ENDPOINT` (or `R2_ACCOUNT_ID`), `R2_BUCKET`, `R2_ACCESS_KEY_ID` or `R2_SECRET_ACCESS_KEY` | Every upload and every photo read would fail after the site looked healthy |
 | `R2_ENDPOINT is "http://…"` | that key | Every photo request signs the Secret Access Key into that line, so it must not cross an unencrypted one |
 | "No .env at … and the environment has no `MONGO_URL` or `SESSION_SECRET` either" | those two | Nothing can be read and nothing can be signed. On a laptop, copy `.env.example`; on a hosted service, set them in its dashboard |
+
+On a VM you own, `SMTP_HOST` is the door to use — nothing is blocking port 587 for you, and
+a university relay becomes possible on this shape of host. `BREVO_API_KEY` is the door for a
+host that restricts outbound traffic (Render's free tier blocks 25, 465 and 587 outright),
+and it wins over `SMTP_HOST` when both are set.
 
 ## Appendix B — every hostname and name this plan uses
 

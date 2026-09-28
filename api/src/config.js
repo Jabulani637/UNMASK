@@ -122,6 +122,30 @@ const config = {
     from: process.env.MAIL_FROM || 'Unmask <no-reply@unmask.local>',
   },
 
+  // The second way a message leaves this process: Brevo's HTTPS relay, on the port
+  // no host blocks. It exists because Render's free tier refuses outbound traffic to
+  // 25, 465 and 587 (their own changelog, 26 September 2025) — an SMTP-only build
+  // boots green there, answers /api/health with `emailTransport: "smtp"`, and then
+  // hangs for two minutes on every registration before answering "something went
+  // wrong on our end".
+  //
+  // `BREVO_API_KEY` is the *API* key from Brevo's settings (it starts `xkeysib-`),
+  // which is a different credential from the SMTP key and is not interchangeable with
+  // it. The URL is overridable for the same reason R2's endpoint is: the one test that
+  // proves this path aims it at a server on localhost instead of at Brevo.
+  //
+  // And the key is never read while testing, for the third time in this file: a suite
+  // that honoured it would send a few hundred made-up students' verification codes
+  // through a real mailbox in somebody's account. `test/mailBrevo.test.js` is the one
+  // file that asks for it back, and it aims the URL at a server on localhost.
+  mail: {
+    apiKey:
+      (process.env.NODE_ENV || 'development') === 'test'
+        ? ''
+        : process.env.BREVO_API_KEY || '',
+    apiUrl: process.env.BREVO_API_URL || 'https://api.brevo.com/v3/smtp/email',
+  },
+
   appUrl: (process.env.PUBLIC_APP_URL || 'http://localhost:5273').replace(/\/$/, ''),
 
   // Where a profile photo's bytes actually live. `disk` is the default because it
@@ -207,8 +231,8 @@ function productionProblems() {
     problems.push(`This process serves the site at "${config.appUrl}", but that origin is not in WEB_ORIGIN (${config.webOrigins.join(', ') || 'empty'}) — the chat socket would be refused on every connection. Add the site's own address to WEB_ORIGIN.`);
   }
 
-  if (!config.smtp.host) {
-    problems.push('SMTP_HOST is empty — in production a confirmation code is written to api/outbox on this server, where no student will ever read it, so nobody can finish registering. Set SMTP_HOST/SMTP_USER/SMTP_PASSWORD, or start the API with NODE_ENV=development while you test.');
+  if (!config.smtp.host && !config.mail.apiKey) {
+    problems.push('No mail transport is configured — SMTP_HOST is empty and BREVO_API_KEY is not set, so in production a confirmation code is written to api/outbox on this server, where no student will ever read it, so nobody can finish registering. Either set SMTP_HOST/SMTP_USER/SMTP_PASSWORD, or set BREVO_API_KEY to send over HTTPS instead (Render\'s free tier blocks SMTP egress, so on that host the second is the only one that works), or start the API with NODE_ENV=development while you test.');
   }
 
   if (/change-me/i.test(config.mongoUrl)) {
@@ -228,6 +252,12 @@ function productionProblems() {
   // travelling in the clear, and that is only true of one that starts http://.
   if (config.photoStore === 'r2' && config.r2.endpoint.startsWith('http://')) {
     problems.push(`R2_ENDPOINT is "${config.r2.endpoint}" — every photo read and write signs its request with R2_SECRET_ACCESS_KEY, and over plain http that signature goes out unencrypted, on a line anyone between here and Cloudflare can read. Use the https:// endpoint R2 gives you (https://<account-id>.r2.cloudflarestorage.com).`);
+  }
+
+  // The same rule as the one above, for the other secret this process puts on a
+  // wire: the Brevo key is a whole mailbox in one string, and it rides in a header.
+  if (config.mail.apiKey && config.mail.apiUrl.startsWith('http://')) {
+    problems.push(`BREVO_API_URL is "${config.mail.apiUrl}" — every request to it carries BREVO_API_KEY in a header, so over plain http that key leaves this server unencrypted and anyone reading the line can send mail as your domain. Use the https:// address; the default, https://api.brevo.com/v3/smtp/email, needs no setting at all.`);
   }
 
   if (config.devAutoVerify) {
@@ -294,6 +324,17 @@ function configProblems() {
       `SMTP_HOST is set but ${which} ${missing.length === 1 ? 'is' : 'are'} not — verification emails would fail silently. ` +
         `${missing.length === 1 ? 'It must carry that exact name' : 'Both must carry these exact names'}: a sender address or a key filed under any other name is a different variable, and this process never reads it.`
     );
+  }
+
+  // Asked outside production as well as inside it, like the R2 questions: a sender
+  // Brevo has never seen is refused at 6 a.m. on a laptop exactly as loudly as it is
+  // refused on a server, and a developer should hear about it at boot rather than as
+  // a 500 the first time a student asks for a code. Three addresses count as a
+  // placeholder: the one this process invents when nothing is set, the one
+  // `.env.example` prints for someone to copy without changing, and the one the
+  // production compose file fills in when `MAIL_FROM` is left blank in `prod.env`.
+  if (config.mail.apiKey && (/\.(local|example)\b/i.test(config.smtp.from) || /@your-domain\b/i.test(config.smtp.from))) {
+    problems.push(`BREVO_API_KEY is set but MAIL_FROM is still "${config.smtp.from}" — an address this project ships with, not one anyone owns. Brevo refuses a message from any sender it has not seen before, so every code would be rejected. Set MAIL_FROM to the address you verified under "Senders, Domains and IPs" in Brevo, or unset BREVO_API_KEY to go back to writing mail into api/outbox.`);
   }
 
   // Two, because these are all that exist. A typo here (`s3`, `r2bucket`) would

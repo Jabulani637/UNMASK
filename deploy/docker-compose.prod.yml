@@ -7,7 +7,7 @@
 # development database on a laptop, with its port published to 127.0.0.1 so the API can
 # reach it directly, and it works without any of the keys below. This one assumes a
 # server, a domain and a proxy that terminates TLS, and refuses to start without them —
-# which is the same bargain `api/src/config.js` makes at boot, in eighteen sentences that
+# which is the same bargain `api/src/config.js` makes at boot, in twenty sentences that
 # each name one thing that would otherwise go quietly wrong.
 #
 # Two of the services here are optional, and the way they are made optional is the point
@@ -137,13 +137,18 @@ services:
       # Empty SESSION_SECRET cannot sign a cookie; the gate says so instead of starting.
       SESSION_SECRET: ${SESSION_SECRET:?generate a 64-character hex string and put it in deploy/prod.env}
 
-      # Registration ends in an emailed link. With no SMTP_HOST the API writes mail to
-      # api/outbox/ instead, which is a development convenience and, on a server, a way
-      # for nobody to ever confirm an address. That is gate P4, and it stops the boot.
-      SMTP_HOST: ${SMTP_HOST:?your mail relay, or any provider that will send confirmations}
+      # Registration ends in an emailed six-digit code, and this process has two doors
+      # out: an SMTP relay, or a provider's HTTPS API on port 443. A host that blocks
+      # outbound SMTP — Render's free tier blocks 25, 465 and 587 — can only use the
+      # second. With neither, the API writes mail to api/outbox/, which on a server is a
+      # way for nobody to ever confirm an address. That is one of the boot gates, and it
+      # stops the boot, so compose deliberately asks for neither of these two.
+      SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      BREVO_API_KEY: ${BREVO_API_KEY:-}
+      BREVO_API_URL: ${BREVO_API_URL:-}
       MAIL_FROM: ${MAIL_FROM:-Unmask <no-reply@your-domain>}
     volumes:
       # The uploaded photos, in a named volume rather than in the container's writable
