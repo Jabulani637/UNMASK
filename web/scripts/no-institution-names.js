@@ -14,8 +14,14 @@
  * without being added to the guard, and the only way to pass is to not name colleges
  * in the client at all. Every string the seed carries is checked, plus the words of
  * every long name (" Peninsula " is what leaks out of a headline that dropped the
- * university off the front), each at a word boundary and case-sensitively: `UCT` in
- * uppercase is the abbreviation, `uct` inside "product" is English.
+ * university off the front), each at a word boundary: `UCT` is the abbreviation,
+ * `uct` inside "product" is English.
+ *
+ * Twenty-six institutions brings in short names that are also English words, so a
+ * short name is matched in any case *unless* it collides with ordinary speech or
+ * with a tag — see AMBIGUOUS_SHORT_NAMES. Dropping the case rule for those three is
+ * not a weakening: "sign up" and `</ul>` are not claims about a college, and the
+ * all-caps shape a badge actually uses is still caught.
  *
  * A local fixture in a test is not a claim about the world, so `*.test.*` files are
  * skipped — they need *an* institution to assert against. Anything else in `src/` is
@@ -57,7 +63,19 @@ const GENERIC = new Set([
   'eastern',
   'northern',
   'southern',
+  // A faculty field has to be able to say it, and one of CPUT's own faculties is
+  // "Applied Sciences" — which is a placeholder in the staff form, not a college.
+  'sciences',
 ]);
+
+/**
+ * Short names that are also words the interface has to be allowed to type.
+ *
+ * `UP` is in every sentence about signing up, `CUT` in "cut-off", and `UL` is the
+ * list tag the pages are built out of. Their all-caps form stays banned, so a card
+ * that prints the University of Pretoria is still caught.
+ */
+const AMBIGUOUS_SHORT_NAMES = new Set(['up', 'ul', 'cut']);
 
 const escape = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const atBoundary = (value, flags = '') => new RegExp(`(?<![\\p{L}\\p{N}])${escape(value)}(?![\\p{L}\\p{N}])`, `u${flags}`);
@@ -66,8 +84,14 @@ const banned = [];
 for (const row of PILOT_INSTITUTIONS) {
   banned.push({ needle: row.name, kind: 'institution name', re: atBoundary(row.name) });
   // Lowercase is the same bug: "chat with cput students" names a college the API
-  // owns. The word boundary is what stops "uct" being found inside "product".
-  banned.push({ needle: row.shortName, kind: 'institution short name', re: atBoundary(row.shortName, 'i') });
+  // owns. The word boundary is what stops "uct" being found inside "product", and
+  // the case rule is what stops "sign up" being found inside University of Pretoria.
+  const ambiguous = AMBIGUOUS_SHORT_NAMES.has(row.shortName.toLowerCase());
+  banned.push({
+    needle: row.shortName,
+    kind: 'institution short name',
+    re: atBoundary(row.shortName, ambiguous ? '' : 'i'),
+  });
   for (const word of words(row.name)) banned.push({ needle: word, kind: 'word from an institution name', re: atBoundary(word) });
   for (const domain of row.emailDomains) {
     banned.push({ needle: domain, kind: 'email domain', re: new RegExp(escape(domain), 'i') });

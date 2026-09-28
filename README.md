@@ -637,7 +637,7 @@ UNMASK\
     src\db.js            the one Mongo connection, and the indexes it creates
     src\app.js           the Express app: CORS, JSON, routes, the error translator
     src\index.js         starts it, retries the database, then builds the indexes
-    src\domain\          vocabulary — interests, prompts, and the five institutions to start the collection with
+    src\domain\          vocabulary — interests, prompts, and the twenty-six institutions to start the collection with
     src\models\User.js   the account: no name field, hashed tokens only
     src\models\Institution.js one per college: its email domains, its faculty list, its city, and whether it is switched on
     src\models\InstitutionRequest.js "don't see yours?", kept apart from everything else because a stranger wrote it
